@@ -35,7 +35,10 @@ Bila `AI_API_KEY` kosong, agent menawarkan wizard isi key saat pertama dijalanka
 ## Sesi login noVNC (Gmail, dll.)
 
 ```bash
-# Di REPL:
+hafitri --login    # langsung start sesi + tampilkan URL (tanpa API key)
+
+# Atau di REPL:
+/login             # sama seperti di atas
 /session start
 /session url       # http://127.0.0.1:6080/vnc.html
 ```

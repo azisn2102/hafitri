@@ -22,11 +22,12 @@ function usage() {
 Pemakaian:
   node agent.js "tugas"           jalankan sekali lalu keluar
   node agent.js                   mode REPL interaktif
-  node agent.js --session         REPL + langsung start sesi noVNC
-  node agent.js --steps 40 "..."  batasi langkah tool
+  hafitri --login                 start sesi noVNC & tampilkan URL login (tanpa API key)
+  hafitri --session               REPL + langsung start sesi noVNC
+  hafitri --steps 40 "..."        batasi langkah tool
 
-Opsi: --yolo (izinkan perintah berisiko tanpa tanya), --help
-REPL: /help /tools /reset /session start|stop|status|url /yolo /steps /model /quit`);
+Opsi: --login, --yolo (izinkan perintah berisiko tanpa tanya), --help
+REPL: /help /tools /reset /login /session start|stop|status|url /yolo /steps /model /quit`);
 }
 
 function ask(rl, question) {
@@ -55,6 +56,17 @@ async function ensureKey() {
   } finally {
     rl.close();
   }
+}
+
+async function loginInfo() {
+  const url = await sess.start();
+  return [
+    `noVNC: ${url}`,
+    'Buka URL itu di browser, lalu login Gmail/Google manual di jendela Chromium yang tampil.',
+    'VNC tanpa password. Cookie tersimpan di ' + cfg.userDataDir,
+    'Selesai login? Agent otomatis memakai sesi itu lewat tool "browser".',
+    '/session status untuk cek, /session stop untuk matikan.',
+  ].join('\n');
 }
 
 function printTool(ev) {
@@ -102,6 +114,7 @@ async function repl(opts) {
         if (cmd === 'help') {
           console.log('/help              bantuan ini\n' +
             '/tools             daftar tool\n' +
+            '/login             start sesi noVNC + URL login\n' +
             '/reset             hapus riwayat percakapan\n' +
             '/session start     start Xvfb + browser + noVNC\n' +
             '/session stop      matikan sesi browser\n' +
@@ -116,6 +129,8 @@ async function repl(opts) {
         } else if (cmd === 'reset') {
           messages = null;
           console.log('riwayat direset');
+        } else if (cmd === 'login') {
+          console.log(await loginInfo());
         } else if (cmd === 'session') {
           if (arg === 'start') console.log(await sess.start());
           else if (arg === 'stop') console.log('dimatikan: ' + (sess.stop().join(', ') || '(tidak ada proses)'));
@@ -149,16 +164,18 @@ async function repl(opts) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false };
+  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false };
   const parts = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--yolo') opts.yolo = true;
     else if (a === '--session') opts.session = true;
+    else if (a === '--login') opts.login = true;
     else if (a === '--steps') opts.maxSteps = parseInt(argv[++i], 10) || cfg.maxSteps;
     else if (a === '--help' || a === '-h') { usage(); return; }
     else parts.push(a);
   }
+  if (opts.login) { console.log(await loginInfo()); return; }
   if (!(await ensureKey())) return;
   if (opts.session) console.log('noVNC: ' + await sess.start());
 
