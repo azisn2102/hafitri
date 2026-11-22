@@ -14,13 +14,28 @@ cp .env.example .env              # lalu isi AI_API_KEY (wizard juga bisa otomat
 node --check agent.js && node --check src/*.js && node --check src/tools/*.js
 
 hafitri "tugas sekali jalan"      # jalankan sekali lalu keluar
-hafitri                           # REPL interaktif
-hafitri --session                 # REPL + langsung nyalakan sesi noVNC
+hafitri                           # TUI full-screen: satu sesi, percakapan berlanjut
+hafitri --plain                   # REPL plaintext (tanpa TUI)
+hafitri --tui --session           # TUI + langsung nyalakan sesi noVNC
 ```
 
-Bila `AI_API_KEY` kosong, agent menawarkan wizard isi key saat pertama dijalankan (tersimpan di
-`.env` dengan chmod 600). API yang didukung: semua endpoint `/chat/completions` OpenAI-compatible
-(OpenRouter, OpenAI, Groq, Gemini lewat gateway OpenAI-compatible, dll.).
+## TUI (percakapan berlanjut dalam satu sesi)
+
+`hafitri` tanpa argumen membuka TUI full-screen: panel **Percakapan** yang bisa di-scroll,
+kolom input di bawah, dan status bar (provider/model/sesi). Riwayat percakapan dipertahankan
+antar pesan — tidak perlu mengulang konteks. Perintah `/reset` memulai chat baru,
+`/clear` hanya mengosongkan layar, `/help` menampilkan semua perintah. Tool call tampil
+langsung di panel yang sama. Tekan `Ctrl+C` untuk keluar.
+
+Secara default agent memakai **Gemini web** (`AI_PROVIDER=gemini-web`) lewat sesi login browser
+yang sudah Anda buka di noVNC — **tanpa API key**. Model dipilih lewat dropdown di halaman Gemini:
+`GEMINI_MODEL=auto` (default, paling stabil), `flash` (model cepat), `pro` (analisis dalam).
+Di akun yang opsi cepatnya bernama "Hydrogen", `flash` dipetakan ke mode **Otomatis** karena
+Hydrogen sering macet; `pro` dipetakan ke "Analisis lebih dalam/Neon".
+
+Paksa provider lewat flag: `hafitri --gemini "tugas"` atau `hafitri --api "tugas"`.
+Untuk provider `api`, wizard isi key muncul saat first run (tersimpan di `.env`, chmod 600).
+API yang didukung: semua endpoint `/chat/completions` OpenAI-compatible (OpenRouter, OpenAI, Groq, dll.).
 
 ## Tool yang tersedia
 
@@ -60,9 +75,11 @@ Perintah REPL lain: `/help /tools /reset /session stop /session status /yolo on|
 ## Arsitektur singkat
 
 ```
-agent.js            CLI + REPL + wizard API key
+agent.js            CLI, flag provider, wizard API key
+src/tui.js          TUI full-screen (blessed), sesi percakapan berlanjut
 src/config.js       baca .env & konfigurasi
-src/llm.js          client chat-completions + retry
+src/llm.js          dispatcher provider (API / Gemini web)
+src/geminiWeb.js    backend Gemini web via CDP + protokol tool-call teks
 src/loop.js         system prompt + agent loop (tool calling)
 src/tools/*         shell, file, web, browser
 src/browser.js      Xvfb + Chromium(CDP) + x11vnc + websockify

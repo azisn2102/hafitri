@@ -25,9 +25,15 @@ class Cdp {
     this.ws = ws;
     this.id = 0;
     this.pending = new Map();
+    this.listeners = new Map();
     ws.on('message', (raw) => {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
+      if (!msg.id && msg.method) {
+        const fns = this.listeners.get(msg.method) || [];
+        for (const fn of fns) { try { fn(msg.params); } catch { /* abaikan */ } }
+        return;
+      }
       if (msg.id && this.pending.has(msg.id)) {
         const { resolve, reject } = this.pending.get(msg.id);
         this.pending.delete(msg.id);
@@ -86,6 +92,12 @@ class Cdp {
     // Cegah unhandled rejection bila ws ditutup sebelum jawaban tiba.
     p.catch(() => {});
     return p;
+  }
+
+  /** Langganan event CDP, mis. Network.loadingFailed, Log.entryAdded */
+  on(method, fn) {
+    if (!this.listeners.has(method)) this.listeners.set(method, []);
+    this.listeners.get(method).push(fn);
   }
 
   close() { try { this.ws.close(); } catch { /* abaikan */ } }

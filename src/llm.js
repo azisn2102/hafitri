@@ -1,5 +1,6 @@
 'use strict';
 const cfg = require('./config');
+const geminiWeb = require('./geminiWeb');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -10,6 +11,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * @returns {Promise<object>} pesan assistant (boleh berisi tool_calls)
  */
 async function chat(messages, tools) {
+  if (cfg.provider === 'gemini-web') return geminiWeb.chat(messages, tools);
   if (!cfg.apiKey) {
     throw new Error('AI_API_KEY belum diisi. Salin .env.example -> .env lalu isi API key, atau jalankan agent sekali lagi untuk wizard setup.');
   }

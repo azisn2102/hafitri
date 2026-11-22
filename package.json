@@ -12,6 +12,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "blessed": "^0.1.81",
     "ws": "^8.18.0"
   }
 }

@@ -7,6 +7,8 @@ const cfg = require('./src/config');
 const { newSession, step } = require('./src/loop');
 const { TOOLS } = require('./src/tools');
 const sess = require('./src/browser');
+const geminiWeb = require('./src/geminiWeb');
+const tui = require('./src/tui');
 
 const COLOR = process.stdout.isTTY && !process.env.NO_COLOR;
 const c = {
@@ -20,13 +22,16 @@ function usage() {
   console.log(`agent — agent CLI lokal (otomasi, coding, riset web)
 
 Pemakaian:
-  node agent.js "tugas"           jalankan sekali lalu keluar
-  node agent.js                   mode REPL interaktif
-  hafitri --login                 start sesi noVNC & tampilkan URL login (tanpa API key)
+  hafitri "tugas"                 jalankan sekali (provider dari .env)
+  hafitri --gemini "tugas"        pakai Gemini web (sesi login, tanpa API key)
+  hafitri --api "tugas"           pakai API OpenAI-compatible (butuh AI_API_KEY)
+  hafitri                         TUI full-screen (default di terminal)
+  hafitri --plain                 REPL plaintext saja
+  hafitri --login                 start sesi noVNC & tampilkan URL login
   hafitri --session               REPL + langsung start sesi noVNC
   hafitri --steps 40 "..."        batasi langkah tool
 
-Opsi: --login, --yolo (izinkan perintah berisiko tanpa tanya), --help
+Opsi: --gemini, --api, --tui, --plain, --login, --yolo (perintah berisiko), --help
 REPL: /help /tools /reset /login /session start|stop|status|url /yolo /steps /model /quit`);
 }
 
@@ -34,10 +39,13 @@ function ask(rl, question) {
   return new Promise((resolve) => rl.question(question, resolve));
 }
 
-async function ensureKey() {
+async function ensureConfig(opts) {
+  if (opts.gemini) cfg.provider = 'gemini-web';
+  if (opts.api) cfg.provider = 'api';
+  if (cfg.provider === 'gemini-web') return true;
   if (cfg.apiKey) return true;
   if (!process.stdin.isTTY) {
-    console.error(c.yellow('AI_API_KEY belum ada. Buat /home/ai-agent/.env dari .env.example lalu isi API key.'));
+    console.error(c.yellow('AI_API_KEY belum ada. Pakai --gemini (sesi login) atau isi AI_API_KEY di /home/ai-agent/.env.'));
     return false;
   }
   console.log(c.yellow('\nWizard setup — API key model (OpenAI-compatible).'));
@@ -48,9 +56,9 @@ async function ensureKey() {
     const base = (await ask(rl, `AI_BASE_URL [${cfg.baseUrl}]: `)).trim() || cfg.baseUrl;
     const model = (await ask(rl, `AI_MODEL [${cfg.model}]: `)).trim() || cfg.model;
     const envPath = path.join(cfg.root, '.env');
-    fs.writeFileSync(envPath, `# agent config (jangan dibagikan)\nAI_BASE_URL=${base}\nAI_API_KEY=${key}\nAI_MODEL=${model}\n`);
+    fs.writeFileSync(envPath, `# agent config (jangan dibagikan)\nAI_PROVIDER=api\nAI_BASE_URL=${base}\nAI_API_KEY=${key}\nAI_MODEL=${model}\n`);
     fs.chmodSync(envPath, 0o600);
-    Object.assign(cfg, { apiKey: key, baseUrl: base.replace(/\/+$/, ''), model });
+    Object.assign(cfg, { apiKey: key, baseUrl: base.replace(/\/+$/, ''), model, provider: 'api' });
     console.log(c.green(`Tersimpan di ${envPath} (chmod 600).\n`));
     return true;
   } finally {
@@ -94,7 +102,10 @@ async function runTask(messages, opts) {
 async function repl(opts) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   let messages = null;
-  console.log(c.bold(`agent v0.1`) + c.dim(` | model: ${cfg.model} | ${cfg.baseUrl} | /help`));
+  const label = cfg.provider === 'gemini-web'
+    ? `Gemini web (${cfg.geminiModel})`
+    : `${cfg.model} @ ${cfg.baseUrl}`;
+  console.log(c.bold(`hafitri v0.1`) + c.dim(` | model: ${label} | /help`));
 
   rl.on('SIGINT', () => {
     console.log('\n(tekan /quit atau Ctrl+D untuk keluar)');
@@ -122,12 +133,13 @@ async function repl(opts) {
             '/session url       URL noVNC untuk login manual\n' +
             '/yolo [on|off]     izinkan perintah berisiko\n' +
             '/steps N           batas langkah tool\n' +
-            '/model <nama>      ganti model LLM\n' +
+            '/model <nama>      ganti model (auto|flash|pro untuk Gemini web)\n' +
             '/quit              keluar');
         } else if (cmd === 'tools') {
           console.log(TOOLS.map((t) => `  ${t.name} — ${t.description.split('.')[0]}`).join('\n'));
         } else if (cmd === 'reset') {
           messages = null;
+          geminiWeb.reset();
           console.log('riwayat direset');
         } else if (cmd === 'login') {
           console.log(await loginInfo());
@@ -146,7 +158,11 @@ async function repl(opts) {
           else { opts.maxSteps = n; console.log('maxSteps = ' + n); }
         } else if (cmd === 'model') {
           if (!arg) console.log('pakai: /model <nama-model>');
-          else { cfg.model = arg; console.log('model = ' + arg); }
+          else if (cfg.provider === 'gemini-web') {
+            cfg.geminiModel = arg;
+            geminiWeb.reset();
+            console.log('model Gemini = ' + arg + ' (auto|flash|pro)');
+          } else { cfg.model = arg; console.log('model = ' + arg); }
         } else {
           console.log('perintah tidak dikenal: /' + cmd);
         }
@@ -164,24 +180,30 @@ async function repl(opts) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false };
+  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false, gemini: false, api: false, tui: false, plain: false };
   const parts = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--yolo') opts.yolo = true;
+    else if (a === '--gemini') opts.gemini = true;
+    else if (a === '--api') opts.api = true;
     else if (a === '--session') opts.session = true;
     else if (a === '--login') opts.login = true;
+    else if (a === '--tui') opts.tui = true;
+    else if (a === '--plain') opts.plain = true;
     else if (a === '--steps') opts.maxSteps = parseInt(argv[++i], 10) || cfg.maxSteps;
     else if (a === '--help' || a === '-h') { usage(); return; }
     else parts.push(a);
   }
   if (opts.login) { console.log(await loginInfo()); return; }
-  if (!(await ensureKey())) return;
+  if (!(await ensureConfig(opts))) return;
   if (opts.session) console.log('noVNC: ' + await sess.start());
 
   const task = parts.join(' ').trim();
   if (task) {
     await runTask(newSession(task), opts);
+  } else if (opts.tui || (!opts.plain && process.stdin.isTTY)) {
+    tui.start(opts);
   } else {
     await repl(opts);
   }
