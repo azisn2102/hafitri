@@ -43,8 +43,10 @@ hafitri --login    # langsung start sesi + tampilkan URL (tanpa API key)
 /session url       # http://127.0.0.1:6080/vnc.html
 ```
 
-Buka URL itu di browser Anda, **login Gmail/Google secara manual** di layar VNC (termasuk OTP
+Saat sesi dinyalakan, Chromium langsung membuka halaman login Google (`accounts.google.com`).
+Buka URL noVNC di browser Anda, **login Gmail/Google secara manual** di layar VNC (termasuk OTP
 bila ada). Cookie tersimpan di `.profile/`, sehingga tool `browser` otomatis memakai sesi tersebut.
+Halaman awal bisa diganti lewat `BROWSER_START_URL` di `.env`.
 
 Dari mesin lain, tunnel lewat SSH:
 

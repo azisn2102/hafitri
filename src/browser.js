@@ -111,7 +111,7 @@ async function start() {
       '--disable-software-rasterizer',
       '--window-size=1280,800',
       '--lang=id',
-      'about:blank',
+      cfg.startUrl,
     ], { DISPLAY: cfg.display });
     for (let i = 0; i < 40; i++) {
       if (await cdpUp()) break;
