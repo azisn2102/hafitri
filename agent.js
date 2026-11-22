@@ -26,12 +26,13 @@ Pemakaian:
   hafitri --gemini "tugas"        pakai Gemini web (sesi login, tanpa API key)
   hafitri --api "tugas"           pakai API OpenAI-compatible (butuh AI_API_KEY)
   hafitri                         TUI full-screen (default di terminal)
+  hafitri --new                   mulai sesi baru (hapus riwayat lama)
   hafitri --plain                 REPL plaintext saja
   hafitri --login                 start sesi noVNC & tampilkan URL login
   hafitri --session               REPL + langsung start sesi noVNC
   hafitri --steps 40 "..."        batasi langkah tool
 
-Opsi: --gemini, --api, --tui, --plain, --login, --yolo (perintah berisiko), --help
+Opsi: --gemini, --api, --new, --tui, --plain, --login, --yolo (perintah berisiko), --help
 REPL: /help /tools /reset /login /session start|stop|status|url /yolo /steps /model /quit`);
 }
 
@@ -180,7 +181,7 @@ async function repl(opts) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false, gemini: false, api: false, tui: false, plain: false };
+  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false, gemini: false, api: false, tui: false, plain: false, fresh: false };
   const parts = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -189,6 +190,7 @@ async function main() {
     else if (a === '--api') opts.api = true;
     else if (a === '--session') opts.session = true;
     else if (a === '--login') opts.login = true;
+    else if (a === '--new') opts.fresh = true;
     else if (a === '--tui') opts.tui = true;
     else if (a === '--plain') opts.plain = true;
     else if (a === '--steps') opts.maxSteps = parseInt(argv[++i], 10) || cfg.maxSteps;
@@ -197,6 +199,11 @@ async function main() {
   }
   if (opts.login) { console.log(await loginInfo()); return; }
   if (!(await ensureConfig(opts))) return;
+  if (opts.fresh) {
+    try { fs.unlinkSync(path.join(cfg.root, '.sessions', 'chat.json')); } catch { /* tidak ada */ }
+    geminiWeb.reset();
+    console.log('riwayat lama dihapus — sesi baru dimulai.');
+  }
   if (opts.session) console.log('noVNC: ' + await sess.start());
 
   const task = parts.join(' ').trim();

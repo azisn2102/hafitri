@@ -58,7 +58,7 @@ function saveHistory(messages) {
 const HELP = [
   '/help              bantuan ini',
   '/theme [nama]      opencode | mimo',
-  '/reset             hapus riwayat, mulai chat baru',
+  '/reset, /new       hapus riwayat, mulai chat baru',
   '/clear             bersihkan layar (riwayat tetap tersimpan)',
   '/history           info riwayat tersimpan',
   '/login             start sesi noVNC + URL login',
@@ -250,6 +250,7 @@ function start(opts) {
       case 'history':
         notify(historyInfo());
         break;
+      case 'new':
       case 'reset':
         messages = null;
         geminiWeb.reset();
