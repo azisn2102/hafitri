@@ -30,7 +30,8 @@ langsung di panel yang sama. Tekan `Ctrl+C` untuk keluar.
 Riwayat percakapan tersimpan otomatis di `.sessions/chat.json` (chmod 600) dan **dimuat
 kembali saat TUI dibuka**: cukup jalankan `hafitri`, percakapan sebelumnya langsung tampil
 dan menjadi konteks pesan berikutnya. Beberapa sesi bisa disimpan: `/new` membuat sesi baru **tanpa menghapus sesi lama**,
-`/sessions` menampilkan daftar sesi, `/load <n|id>` memuat salah satunya.
+`/sessions` membuka picker sesi (navigasi ↑/↓, Enter untuk memuat, ESC batal),
+`/load <n|id>` memuat langsung.
 `/reset` mengosongkan hanya sesi aktif, `/clear` hanya mengosongkan layar.
 Dari shell, `hafitri --new` langsung membuka sesi baru. Riwayat lama `chat.json`
 otomatis dimigrasikan ke format multi-sesi saat pertama dijalankan.

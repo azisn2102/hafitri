@@ -35,8 +35,8 @@ const HELP = [
   '/help              bantuan ini',
   '/theme [nama]      opencode | mimo',
   '/new               sesi baru (sesi lama tetap tersimpan)',
-  '/sessions          daftar sesi tersimpan',
-  '/load <n|id>       muat sesi tertentu',
+  '/sessions          pilih sesi (↑↓ + Enter, ESC batal)',
+  '/load <n|id>       muat sesi langsung',
   '/reset             kosongkan sesi aktif',
   '/clear             bersihkan layar (riwayat tetap tersimpan)',
   '/history           info riwayat tersimpan',
@@ -89,11 +89,23 @@ function start(opts) {
     style: { fg: palette.text, bg: palette.panel, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },
   });
 
+  const picker = blessed.list({
+    top: 3, left: 2, width: '86%', height: '70%',
+    label: ' PILIH SESI — ↑↓ lalu Enter, ESC batal ', border: { type: 'round' },
+    hidden: true, keys: true, mouse: true, vi: false,
+    style: {
+      fg: palette.text, bg: palette.panel,
+      border: { fg: palette.accent }, label: { fg: palette.accent, bold: true },
+      selected: { fg: palette.text, bg: palette.accent },
+    },
+  });
+
   screen.append(header);
   screen.append(log);
   screen.append(status);
   screen.append(input);
   screen.append(notice);
+  screen.append(picker);
 
   let noticeTimer = null;
   function notify(text, ms = 8000) {
@@ -104,6 +116,34 @@ function start(opts) {
     if (noticeTimer) clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => { notice.hide(); screen.render(); }, ms);
     focusInput();
+  }
+
+  function showPicker() {
+    const rows = store.list();
+    if (!rows.length) return notify('belum ada sesi tersimpan');
+    picker.setItems(rows.map((s, i) => {
+      const mark = s.id === store.activeId() ? '*' : ' ';
+      return `${mark} [${i + 1}] ${s.title} | ${s.count} pesan | ${new Date(s.updatedAt).toLocaleString('id-ID')}`;
+    }));
+    picker.select(0);
+    picker.show();
+    pickerActive = true;
+    screen.render();
+  }
+
+  function closePicker() {
+    pickerActive = false;
+    picker.hide();
+    focusInput();
+    screen.render();
+  }
+
+  let pickerActive = false;
+  function choosePicker() {
+    const rows = store.list();
+    const index = picker.selected;
+    closePicker();
+    if (rows[index]) loadSession(rows[index].id);
   }
 
   let messages = null;
@@ -210,6 +250,21 @@ function start(opts) {
     drawStatus();
   }
 
+  function loadSession(idOrNumber) {
+    const list = store.list();
+    const picked = /^\d+$/.test(String(idOrNumber))
+      ? list[parseInt(idOrNumber, 10) - 1]
+      : list.find((s) => s.id === idOrNumber);
+    if (!picked) return notify('sesi tidak ditemukan');
+    store.setActive(picked.id);
+    const data = store.load(picked.id);
+    messages = data && data.messages && data.messages.length > 1 ? data.messages : null;
+    pending.length = 0;
+    geminiWeb.reset();
+    showMessages(messages);
+    notify(`sesi ${picked.id} dimuat — ${picked.title}`);
+  }
+
   async function command(line) {
     const [cmd, ...rest] = line.slice(1).split(/\s+/);
     const arg = rest.join(' ');
@@ -243,27 +298,13 @@ function start(opts) {
         notify(`sesi baru ${id} — sesi lama tetap tersimpan, /sessions untuk melihat`);
         break;
       }
-      case 'sessions': {
-        const rows = store.list().map((s, i) => {
-          const mark = s.id === store.activeId() ? '*' : ' ';
-          return `${mark}[${i + 1}] ${s.id} | ${s.title} | ${s.count} pesan | ${new Date(s.updatedAt).toLocaleString('id-ID')}`;
-        });
-        notify(rows.length ? rows.join('\n') : 'belum ada sesi tersimpan');
+      case 'sessions':
+        showPicker();
         break;
-      }
-      case 'load': {
-        const list = store.list();
-        const picked = /^\d+$/.test(arg) ? list[parseInt(arg, 10) - 1] : list.find((s) => s.id === arg);
-        if (!picked) { notify('pakai: /load <nomor dari /sessions> atau /load <id>'); break; }
-        store.setActive(picked.id);
-        const data = store.load(picked.id);
-        messages = data && data.messages && data.messages.length > 1 ? data.messages : null;
-        pending.length = 0;
-        geminiWeb.reset();
-        showMessages(messages);
-        notify(`sesi ${picked.id} dimuat — ${picked.title}`);
+      case 'load':
+        if (!arg) showPicker();
+        else loadSession(arg);
         break;
-      }
       case 'reset':
         messages = null;
         pending.length = 0;
@@ -360,7 +401,18 @@ function start(opts) {
   });
   // ESC menutup panel INFO. Jangan biarkan textbox menganggap ESC sebagai "cancel input".
   input.on('keypress', (ch, key) => {
-    if (key && key.name === 'escape') {
+    if (!key) return;
+    if (pickerActive) {
+      if (key.name === 'up') picker.up();
+      else if (key.name === 'down') picker.down();
+      else if (key.name === 'enter') choosePicker();
+      else if (key.name === 'escape') closePicker();
+      else return;
+      key.name = '';
+      screen.render();
+      return;
+    }
+    if (key.name === 'escape') {
       key.name = '';
       if (!notice.hidden) { notice.hide(); screen.render(); }
       focusInput();
