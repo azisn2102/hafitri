@@ -21,8 +21,26 @@ const THEMES = {
   },
 };
 
+const MATH_MAP = {
+  'μ': 'mu', 'π': 'pi', 'θ': 'theta', 'ω': 'omega', 'Δ': 'Delta',
+  'Φ': 'Phi', 'φ': 'phi', 'Σ': 'Sigma', '∑': 'sum', '×': 'x',
+  '⋅': '*', '−': '-', '→': '->', '≤': '<=', '≥': '>=', '≠': '!=',
+  '≈': '~', '°': ' deg', '∞': 'inf',
+};
+
+function tidy(text) {
+  return String(text == null ? '' : text)
+    .normalize('NFKD')
+    .replace(/[\u200B-\u200F\u2060\uFEFF\u20D0-\u20FF\u0300-\u036F]/g, '')
+    .replace(/[μπθωΔΦφΣ∑×⋅−→≤≥≠≈°∞]/g, (c) => MATH_MAP[c] || c)
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function linkify(text) {
-  const safe = String(text == null ? '' : text)
+  const safe = tidy(text)
     .replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'));
   return safe.replace(/https?:\/\/[^\s<>"'()]+/gi, (url) => {
     const clean = url.replace(/[.,;:!?]+$/, '');
