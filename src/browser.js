@@ -73,7 +73,9 @@ function tcpUp(port) {
 async function status() {
   const chrome = readPid('chrome');
   const cdp = chrome ? await cdpUp() : false;
-  if (chrome && cdp) return 'running';
+  const vnc = await tcpUp(cfg.vncPort);
+  const web = await tcpUp(cfg.novncPort);
+  if (chrome && cdp && vnc && web) return 'running';
   return 'stopped';
 }
 
@@ -85,8 +87,6 @@ async function start() {
   fs.mkdirSync(cfg.runDir, { recursive: true });
   fs.mkdirSync(cfg.userDataDir, { recursive: true });
 
-  if ((await status()) === 'running') return novncUrl();
-
   // 1. Xvfb (adopsi display yang sudah ada bila tersedia)
   const displayNo = String(cfg.display).replace(/^:/, '').split('.')[0];
   const displaySocket = `/tmp/.X11-unix/X${displayNo}`;
@@ -96,7 +96,8 @@ async function start() {
   }
 
   // 2. Chromium (headful di Xvfb, sesi login persisten di user-data-dir)
-  if (!readPid('chrome')) {
+  if (!(readPid('chrome') && (await cdpUp()))) {
+    fs.rmSync(pidFile('chrome'), { force: true });
     const bin = findBrowser();
     spawnDetached('chrome', bin, [
       `--remote-debugging-port=${cfg.cdpPort}`,
@@ -120,17 +121,19 @@ async function start() {
   }
 
   // 3. x11vnc (hanya localhost)
-  if (!readPid('x11vnc')) {
+  if (!(readPid('x11vnc') && (await tcpUp(cfg.vncPort)))) {
+    fs.rmSync(pidFile('x11vnc'), { force: true });
     spawnDetached('x11vnc', 'x11vnc', [
       '-display', cfg.display,
       '-rfbport', String(cfg.vncPort),
-      '-localhost', '-nopw', '-forever', '-shared', '-quiet', '-ncache', '10', '-noncp',
+      '-localhost', '-nopw', '-forever', '-shared', '-quiet', '-ncache', '10',
     ]);
     await sleep(500);
   }
 
   // 4. websockify + noVNC
-  if (!readPid('websockify')) {
+  if (!(readPid('websockify') && (await tcpUp(cfg.novncPort)))) {
+    fs.rmSync(pidFile('websockify'), { force: true });
     const webRoot = fs.existsSync(path.join(cfg.novncWeb, 'vnc.html'))
       ? cfg.novncWeb
       : path.join(cfg.novncWeb, 'novnc');

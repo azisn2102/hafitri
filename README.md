@@ -79,3 +79,4 @@ src/cdp.js          klien Chrome DevTools Protocol via ws
 - `Chromium tidak ditemukan` → isi `BROWSER_BIN` di `.env` dengan path binary Chrome/Chromium.
 - `CDP tidak terjangkau` → `/session stop` lalu `/session start`; cek memory (`free -h`).
 - noVNC blank → pastikan `websockify` & `novnc` terpasang, lalu cek `http://127.0.0.1:6080/vnc.html`.
+- "Failed to connect to server" di viewer noVNC → jalankan `hafitri --login` lagi (otomatis menyalakan ulang x11vnc/websockify yang mati), lalu **refresh halaman noVNC** dan klik Connect.
