@@ -102,10 +102,30 @@ function start(opts) {
     style: { fg: palette.text, bg: palette.panel, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },
   });
 
+  const notice = blessed.box({
+    top: 3, left: 2, width: '86%', height: '70%',
+    label: ' INFO ', border: { type: 'round' }, tags: false,
+    hidden: true, scrollable: true, keys: true, mouse: true,
+    padding: { left: 1, right: 1 },
+    style: { fg: palette.text, bg: palette.panel, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },
+  });
+
   screen.append(header);
   screen.append(log);
   screen.append(status);
   screen.append(input);
+  screen.append(notice);
+
+  let noticeTimer = null;
+  function notify(text, ms = 8000) {
+    notice.setContent(String(text == null ? '' : text));
+    notice.show();
+    notice.scroll(0);
+    screen.render();
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => { notice.hide(); screen.render(); }, ms);
+    if (screen.focused !== input) input.focus();
+  }
 
   let messages = null;
   let busy = false;
@@ -159,6 +179,8 @@ function start(opts) {
     status.style.fg = palette.muted; status.style.bg = palette.bg;
     input.style.fg = palette.text; input.style.bg = palette.panel; input.style.border.fg = palette.accent;
     input.style.label.fg = palette.accent;
+    notice.style.fg = palette.text; notice.style.bg = palette.panel;
+    notice.style.border.fg = palette.accent; notice.style.label.fg = palette.accent;
     log.options.scrollbar.style.bg = palette.border;
     drawHeader();
     renderLog();
@@ -214,74 +236,74 @@ function start(opts) {
         process.exit(0);
         break;
       case 'help':
-        HELP.forEach((h) => append('info', h));
+        notify(HELP.join('\n'));
         break;
       case 'theme':
-        if (arg && applyTheme(arg)) append('info', `tema: ${arg}`);
-        else append('info', `tema saat ini: ${theme}. Pilihan: opencode | mimo`);
+        if (arg && applyTheme(arg)) notify(`tema: ${arg}`);
+        else notify(`tema saat ini: ${theme}. Pilihan: opencode | mimo`);
         break;
       case 'clear':
         entries.length = 0;
         renderLog();
         break;
       case 'history':
-        append('info', historyInfo());
+        notify(historyInfo());
         break;
       case 'reset':
         messages = null;
         geminiWeb.reset();
         try { fs.unlinkSync(HISTORY_FILE); } catch { /* tidak ada */ }
-        append('info', 'riwayat dihapus — tugas berikutnya mulai percakapan baru');
+        notify('riwayat dihapus — tugas berikutnya mulai percakapan baru');
         break;
       case 'login':
-        append('info', await sess.start());
+        notify(await sess.start());
         await refreshSession();
         break;
       case 'session':
-        if (arg === 'start') append('info', await sess.start());
-        else if (arg === 'stop') append('info', 'dimatikan: ' + ((await sess.stop()).join(', ') || '(tidak ada proses)'));
-        else if (arg === 'status') append('info', await sess.status());
-        else if (arg === 'url') append('info', sess.novncUrl());
-        else append('info', 'pakai: /session start|stop|status|url');
+        if (arg === 'start') notify(await sess.start());
+        else if (arg === 'stop') notify('dimatikan: ' + ((await sess.stop()).join(', ') || '(tidak ada proses)'));
+        else if (arg === 'status') notify(await sess.status());
+        else if (arg === 'url') notify(sess.novncUrl());
+        else notify('pakai: /session start|stop|status|url');
         await refreshSession();
         break;
       case 'yolo':
         opts.yolo = arg !== 'off';
-        append('info', 'yolo = ' + opts.yolo);
+        notify('yolo = ' + opts.yolo);
         break;
       case 'steps': {
         const n = parseInt(arg, 10);
-        if (n) { opts.maxSteps = n; append('info', 'maxSteps = ' + n); }
-        else append('info', 'pakai: /steps 40');
+        if (n) { opts.maxSteps = n; notify('maxSteps = ' + n); }
+        else notify('pakai: /steps 40');
         break;
       }
       case 'model':
-        if (!arg) append('info', 'pakai: /model <nama>');
+        if (!arg) notify('pakai: /model <nama>');
         else if (cfg.provider === 'gemini-web') {
           cfg.geminiModel = arg;
           geminiWeb.reset();
-          append('info', `model Gemini = ${arg} (auto|flash|pro)`);
+          notify(`model Gemini = ${arg} (auto|flash|pro)`);
         } else {
           cfg.model = arg;
-          append('info', 'model = ' + arg);
+          notify('model = ' + arg);
         }
         drawHeader();
         break;
       default:
-        append('info', 'perintah tidak dikenal: /' + cmd);
+        notify('perintah tidak dikenal: /' + cmd);
     }
   }
 
   async function handle(line) {
     if (!line) return;
     if (line.startsWith('/')) {
-      try { await command(line); } catch (e) { append('error', 'ERROR: ' + e.message); }
+      try { await command(line); } catch (e) { notify('ERROR: ' + e.message); }
       focusInput();
       return;
     }
     if (busy) {
       pending.push(line);
-      append('info', `masih memproses... prompt masuk antrian (${pending.length})`);
+      notify(`masih memproses... prompt masuk antrian (${pending.length})`);
       return;
     }
     append('user', line);
@@ -329,7 +351,7 @@ function start(opts) {
   input.focus();
   screen.render();
   refreshSession();
-  append('info', historyInfo());
+  notify(historyInfo());
   append('agent', 'Halo. Ketik pesan untuk memulai percakapan, atau /help untuk daftar perintah.');
   return screen;
 }
