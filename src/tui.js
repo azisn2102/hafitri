@@ -22,6 +22,16 @@ const THEMES = {
 
 const HISTORY_FILE = path.join(cfg.root, '.sessions', 'chat.json');
 
+function linkify(text) {
+  const safe = String(text == null ? '' : text)
+    .replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'));
+  return safe.replace(/https?:\/\/[^\s<>"'()]+/gi, (url) => {
+    const clean = url.replace(/[.,;:!?]+$/, '');
+    const tail = url.slice(clean.length);
+    return `{underline}{cyan-fg}${clean}{/cyan-fg}{/underline}${tail}`;
+  });
+}
+
 function loadHistory() {
   try {
     const data = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
@@ -77,7 +87,7 @@ function start(opts) {
   const log = blessed.box({
     top: 1, left: 0, width: '100%', height: '100%-5',
     label: ' PERCAKAPAN ', border: { type: 'round' },
-    tags: false, wrap: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
+    tags: true, wrap: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
     padding: { left: 1, right: 1 },
     scrollbar: { ch: ' ', style: { bg: palette.border } },
     style: { fg: palette.text, bg: palette.bg, border: { fg: palette.border }, label: { fg: palette.accent, bold: true } },
@@ -169,7 +179,7 @@ function start(opts) {
         : e.role === 'agent' ? 'HAFITRI'
           : e.role === 'tool' ? 'TOOL' : '';
       const head = label ? `${mark} ${label.padEnd(8)} ` : `${mark} `;
-      const lines = e.text.split('\n');
+      const lines = linkify(e.text).split('\n');
       return head + lines.join('\n' + ' '.repeat(head.length));
     }).join('\n'));
     log.scroll(1000);
