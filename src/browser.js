@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const net = require('net');
+const WebSocket = require('ws');
 const cfg = require('./config');
 const { Cdp } = require('./cdp');
 
@@ -69,12 +70,41 @@ function tcpUp(port) {
   });
 }
 
+/** Cek apakah x11vnc benar-benar merespons handshake RFB lewat websockify */
+function vncReady(timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    let ws;
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { if (ws) ws.terminate(); } catch { /* abaikan */ }
+      resolve(ok);
+    };
+    try {
+      ws = new WebSocket(`ws://127.0.0.1:${cfg.novncPort}/websockify`);
+    } catch { return resolve(false); }
+    ws.on('message', (d) => { if (d.toString().includes('RFB')) finish(true); });
+    ws.on('error', () => finish(false));
+    const timer = setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
+function spawnX11vnc() {
+  spawnDetached('x11vnc', 'x11vnc', [
+    '-display', cfg.display,
+    '-rfbport', String(cfg.vncPort),
+    '-localhost', '-nopw', '-forever', '-shared', '-quiet', '-ncache', '10', '-noshm',
+  ]);
+}
+
 /** Status sesi: 'running' | 'stopped' */
 async function status() {
   const chrome = readPid('chrome');
   const cdp = chrome ? await cdpUp() : false;
-  const vnc = await tcpUp(cfg.vncPort);
   const web = await tcpUp(cfg.novncPort);
+  const vnc = web && (await tcpUp(cfg.vncPort)) && (await vncReady(1500));
   if (chrome && cdp && vnc && web) return 'running';
   return 'stopped';
 }
@@ -123,11 +153,7 @@ async function start() {
   // 3. x11vnc (hanya localhost)
   if (!(readPid('x11vnc') && (await tcpUp(cfg.vncPort)))) {
     fs.rmSync(pidFile('x11vnc'), { force: true });
-    spawnDetached('x11vnc', 'x11vnc', [
-      '-display', cfg.display,
-      '-rfbport', String(cfg.vncPort),
-      '-localhost', '-nopw', '-forever', '-shared', '-quiet', '-ncache', '10',
-    ]);
+    spawnX11vnc();
     await sleep(500);
   }
 
@@ -140,15 +166,27 @@ async function start() {
     spawnDetached('websockify', 'websockify', [
       `--web=${webRoot}`,
       `${cfg.novncAddr}:${cfg.novncPort}`,
-      `localhost:${cfg.vncPort}`,
+      `127.0.0.1:${cfg.vncPort}`,
     ]);
   }
 
-  // Pastikan x11vnc & websockify benar-benar siap sebelum URL dipakai
-  for (let i = 0; i < 20; i++) {
-    if ((await tcpUp(cfg.vncPort)) && (await tcpUp(cfg.novncPort))) break;
-    await sleep(400);
+  // Pastikan handshake RFB benar-benar jalan; kalau macet, paksa restart x11vnc
+  let vncOk = false;
+  for (let attempt = 0; attempt < 3 && !vncOk; attempt++) {
+    for (let i = 0; i < 15; i++) {
+      if ((await tcpUp(cfg.vncPort)) && (await tcpUp(cfg.novncPort))) break;
+      await sleep(300);
+    }
+    vncOk = await vncReady(2500);
+    if (!vncOk) {
+      const pid = readPid('x11vnc');
+      if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* sudah mati */ } }
+      fs.rmSync(pidFile('x11vnc'), { force: true });
+      spawnX11vnc();
+      await sleep(800);
+    }
   }
+  if (!vncOk) throw new Error('VNC tidak merespons setelah restart x11vnc. Cek .run/x11vnc.log.');
 
   return novncUrl();
 }
@@ -157,17 +195,28 @@ function novncUrl() {
   return `http://${cfg.novncAddr}:${cfg.novncPort}/vnc.html`;
 }
 
-/** Matikan semua proses sesi. */
-function stop() {
+/** Matikan semua proses sesi (SIGKILL fallback karena x11vnc sering ngaco saat SIGTERM). */
+async function stop() {
   const out = [];
+  const pids = [];
   for (const name of ['websockify', 'x11vnc', 'chrome', 'xvfb']) {
     const pid = readPid(name);
     if (pid) {
       try { process.kill(-pid, 'SIGTERM'); } catch { /* bukan grup */ }
       try { process.kill(pid, 'SIGTERM'); } catch { /* sudah mati */ }
+      pids.push([name, pid]);
       out.push(name);
     }
     try { fs.unlinkSync(pidFile(name)); } catch { /* tidak ada */ }
+  }
+  // Bersihkan juga proses yatim dari sesi sebelumnya
+  try { require('child_process').execSync(`pkill -9 -f '[x]11vnc -display ${cfg.display}' || true`, { stdio: 'ignore' }); } catch { /* abaikan */ }
+  try { require('child_process').execSync(`pkill -9 -f '^/usr/bin/python3 /bin/websockify --web=.*${cfg.novncPort}' || true`, { stdio: 'ignore' }); } catch { /* abaikan */ }
+  await sleep(1000);
+  for (const [name, pid] of pids) {
+    if (!alive(pid)) continue;
+    try { process.kill(-pid, 'SIGKILL'); } catch { /* bukan grup */ }
+    try { process.kill(pid, 'SIGKILL'); } catch { /* sudah mati */ }
   }
   return out;
 }

@@ -133,7 +133,7 @@ async function repl(opts) {
           console.log(await loginInfo());
         } else if (cmd === 'session') {
           if (arg === 'start') console.log(await sess.start());
-          else if (arg === 'stop') console.log('dimatikan: ' + (sess.stop().join(', ') || '(tidak ada proses)'));
+          else if (arg === 'stop') console.log('dimatikan: ' + ((await sess.stop()).join(', ') || '(tidak ada proses)'));
           else if (arg === 'status') console.log(await sess.status());
           else if (arg === 'url') console.log(sess.novncUrl());
           else console.log('pakai: /session start|stop|status|url');
