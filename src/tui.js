@@ -126,9 +126,16 @@ function start(opts) {
       else if (m.role === 'tool') entries.push({ role: 'tool', text: m.content });
     }
   }
-  const historyInfo = () => saved
-    ? `riwayat dimuat: ${saved.messages.length} pesan (${new Date(saved.updatedAt).toLocaleString('id-ID')})`
-    : 'belum ada riwayat tersimpan';
+  function historyInfo() {
+    const live = loadHistory();
+    if (live) {
+      return `riwayat tersimpan: ${live.messages.length} pesan (${new Date(live.updatedAt).toLocaleString('id-ID')})`;
+    }
+    if (messages && messages.length > 1) {
+      return `sesi ini: ${messages.length} pesan — tersimpan otomatis setelah jawaban selesai`;
+    }
+    return 'belum ada riwayat. Riwayat tersimpan otomatis setelah jawaban pertama selesai.';
+  }
 
   function providerLabel() {
     return cfg.provider === 'gemini-web'
