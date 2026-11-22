@@ -53,6 +53,7 @@ function start(opts) {
   let messages = null;
   let busy = false;
   let sessionState = 'cek...';
+  const pending = [];
 
   function providerLabel() {
     return cfg.provider === 'gemini-web'
@@ -140,9 +141,14 @@ function start(opts) {
     if (!line) return;
     if (line.startsWith('/')) {
       try { await command(line); } catch (e) { append('hafitri', 'ERROR: ' + e.message); }
+      input.focus();
       return;
     }
-    if (busy) { append('', 'masih memproses permintaan sebelumnya...'); return; }
+    if (busy) {
+      pending.push(line);
+      append('', `masih memproses... prompt masuk antrian (${pending.length})`);
+      return;
+    }
     append('anda', line);
     if (!messages) messages = newSession(line);
     else messages.push({ role: 'user', content: line });
@@ -161,7 +167,9 @@ function start(opts) {
       append('hafitri', 'ERROR: ' + (e && e.message ? e.message : String(e)));
     } finally {
       busy = false;
-      drawStatus();
+      input.focus();
+      drawStatus(pending.length ? `${pending.length} prompt menunggu` : 'siap');
+      if (pending.length) setImmediate(() => handle(pending.shift()));
     }
   }
 
@@ -172,7 +180,11 @@ function start(opts) {
     const line = String(value).trim();
     input.clearValue();
     screen.render();
-    handle(line);
+    // Tunda satu tick: blessed masih menyelesaikan event Enter saat submit dipancarkan.
+    setImmediate(() => {
+      input.focus();
+      handle(line);
+    });
   });
   input.key('C-c', () => { screen.destroy(); process.exit(0); });
   screen.key('C-c', () => { screen.destroy(); process.exit(0); });
