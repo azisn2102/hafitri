@@ -84,6 +84,55 @@ function parseDdgLite(html) {
   return results;
 }
 
+const STOP_WORDS = new Set([
+  'foto', 'gambar', 'resmi', 'ri', 'the', 'dan', 'untuk', 'dari', 'yang',
+  'cara', 'apa', 'cari', 'link', 'halaman', 'website', 'http', 'https', 'www',
+]);
+
+function onlyRelevant(results, query) {
+  const tokens = String(query).toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length > 2 && !STOP_WORDS.has(t));
+  if (!tokens.length) return results;
+  return results.filter((r) => {
+    const hay = `${r.title} ${r.href}`.toLowerCase();
+    return tokens.some((t) => hay.includes(t));
+  });
+}
+
+function formatResults(results) {
+  return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.href}`).join('\n');
+}
+
+async function searchViaBrowser(query) {
+  const sess = require('../browser');
+  const conn = await sess.cdp();
+  try {
+    await conn.send('Page.enable');
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`;
+    await conn.send('Page.navigate', { url });
+    for (let i = 0; i < 24; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const res = await conn.send('Runtime.evaluate', {
+        expression: 'document.querySelectorAll("h3").length', returnByValue: true,
+      });
+      if (res.result && res.result.value > 0) break;
+    }
+    const res = await conn.send('Runtime.evaluate', {
+      expression: `JSON.stringify([...document.querySelectorAll('a')]
+        .filter(a => a.querySelector('h3'))
+        .slice(0, 10)
+        .map(a => ({ title: a.querySelector('h3').innerText.trim(), href: a.href })))`,
+      returnByValue: true,
+    });
+    const list = JSON.parse(res.result && res.result.value || '[]');
+    return list.filter((r) => /^https?:\/\//.test(r.href) && !/google\.[a-z.]+/.test(r.href));
+  } finally {
+    try { conn.close(); } catch { /* abaikan */ }
+  }
+}
+
 async function web_search({ query }) {
   const enc = encodeURIComponent(query);
   const attempts = [
@@ -94,14 +143,17 @@ async function web_search({ query }) {
   for (const a of attempts) {
     try {
       const { text } = await get(a.url, 15000);
-      const results = a.parse(text);
-      if (results.length) {
-        return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.href}`).join('\n');
-      }
-      lastErr = new Error('hasil kosong');
+      const results = onlyRelevant(a.parse(text), query);
+      if (results.length) return formatResults(results);
+      lastErr = new Error('tidak ada hasil relevan');
     } catch (e) { lastErr = e; }
   }
-  throw new Error(`Pencarian web gagal (${lastErr && lastErr.message}). Bisa pakai tool "browser" untuk search langsung.`);
+  try {
+    const results = onlyRelevant(await searchViaBrowser(query), query);
+    if (results.length) return formatResults(results);
+  } catch (e) { lastErr = e; }
+  return `Tidak ada hasil relevan untuk "${query}" (${lastErr && lastErr.message}). `
+    + 'JANGAN mengarang URL. Coba web_fetch langsung ke situs resmi atau tool browser.';
 }
 
 module.exports = { web_fetch, web_search, htmlToText };
