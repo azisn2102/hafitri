@@ -27,6 +27,11 @@ antar pesan — tidak perlu mengulang konteks. Perintah `/reset` memulai chat ba
 `/clear` hanya mengosongkan layar, `/help` menampilkan semua perintah. Tool call tampil
 langsung di panel yang sama. Tekan `Ctrl+C` untuk keluar.
 
+Riwayat percakapan tersimpan otomatis di `.sessions/chat.json` (chmod 600) dan **dimuat
+kembali saat TUI dibuka**: cukup jalankan `hafitri`, percakapan sebelumnya langsung tampil
+dan menjadi konteks pesan berikutnya. `/history` menampilkan info riwayat, `/reset`
+menghapusnya, `/clear` hanya mengosongkan layar tanpa menghapus riwayat.
+
 Tema default `opencode`: latar gelap, border round, aksen ungu, marker peran berwarna
 (`❯ ANDA`, `◆ HAFITRI`, `⚙ TOOL`). Alternatif `mimo` lebih minimal dengan aksen hijau.
 Ganti kapan saja lewat `/theme mimo` atau `/theme opencode`.

@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const blessed = require('blessed');
 const cfg = require('./config');
 const { newSession, step } = require('./loop');
@@ -18,11 +20,37 @@ const THEMES = {
   },
 };
 
+const HISTORY_FILE = path.join(cfg.root, '.sessions', 'chat.json');
+
+function loadHistory() {
+  try {
+    const data = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+    if (Array.isArray(data.messages) && data.messages.length > 1) return data;
+  } catch { /* belum ada riwayat */ }
+  return null;
+}
+
+function saveHistory(messages) {
+  if (!messages || messages.length < 2) return;
+  try {
+    fs.mkdirSync(path.dirname(HISTORY_FILE), { recursive: true });
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify({
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      provider: cfg.provider,
+      model: cfg.provider === 'gemini-web' ? cfg.geminiModel : cfg.model,
+      messages,
+    }, null, 2));
+    fs.chmodSync(HISTORY_FILE, 0o600);
+  } catch { /* gagal simpan: tidak mengganggu sesi */ }
+}
+
 const HELP = [
   '/help              bantuan ini',
   '/theme [nama]      opencode | mimo',
   '/reset             hapus riwayat, mulai chat baru',
-  '/clear             bersihkan layar percakapan',
+  '/clear             bersihkan layar (riwayat tetap tersimpan)',
+  '/history           info riwayat tersimpan',
   '/login             start sesi noVNC + URL login',
   '/session start     start browser + noVNC',
   '/session stop      matikan sesi browser',
@@ -74,6 +102,23 @@ function start(opts) {
   let sessionState = 'cek...';
   const pending = [];
   const entries = [];
+
+  const saved = loadHistory();
+  if (saved) {
+    messages = saved.messages;
+    for (const m of saved.messages.slice(-80)) {
+      if (m.role === 'user') entries.push({ role: 'user', text: m.content });
+      else if (m.role === 'assistant' && m.tool_calls) {
+        for (const tc of m.tool_calls) {
+          entries.push({ role: 'tool', text: `${tc.function && tc.function.name} ${tc.function && tc.function.arguments}` });
+        }
+      } else if (m.role === 'assistant' && m.content) entries.push({ role: 'agent', text: m.content });
+      else if (m.role === 'tool') entries.push({ role: 'tool', text: m.content });
+    }
+  }
+  const historyInfo = () => saved
+    ? `riwayat dimuat: ${saved.messages.length} pesan (${new Date(saved.updatedAt).toLocaleString('id-ID')})`
+    : 'belum ada riwayat tersimpan';
 
   function providerLabel() {
     return cfg.provider === 'gemini-web'
@@ -162,10 +207,14 @@ function start(opts) {
         entries.length = 0;
         renderLog();
         break;
+      case 'history':
+        append('info', historyInfo());
+        break;
       case 'reset':
         messages = null;
         geminiWeb.reset();
-        append('info', 'riwayat direset — tugas berikutnya mulai percakapan baru');
+        try { fs.unlinkSync(HISTORY_FILE); } catch { /* tidak ada */ }
+        append('info', 'riwayat dihapus — tugas berikutnya mulai percakapan baru');
         break;
       case 'login':
         append('info', await sess.start());
@@ -236,6 +285,7 @@ function start(opts) {
       append('error', 'ERROR: ' + (e && e.message ? e.message : String(e)));
     } finally {
       busy = false;
+      saveHistory(messages);
       focusInput();
       drawStatus(pending.length ? `${pending.length} prompt menunggu` : 'siap');
       if (pending.length) setImmediate(() => handle(pending.shift()));
@@ -262,6 +312,7 @@ function start(opts) {
   input.focus();
   screen.render();
   refreshSession();
+  append('info', historyInfo());
   append('agent', 'Halo. Ketik pesan untuk memulai percakapan, atau /help untuk daftar perintah.');
   return screen;
 }
