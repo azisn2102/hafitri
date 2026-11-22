@@ -190,6 +190,7 @@ function start(opts) {
       const label = e.role === 'user' ? 'ANDA'
         : e.role === 'agent' ? 'HAFITRI'
           : e.role === 'tool' ? 'TOOL' : '';
+      if (e.role === 'plain') return linkify(e.text);
       const head = label ? `${mark} ${label.padEnd(8)} ` : `${mark} `;
       const lines = linkify(e.text).split('\n');
       return head + lines.join('\n' + ' '.repeat(head.length));
@@ -376,7 +377,7 @@ function start(opts) {
   screen.render();
   refreshSession();
   notify(historyInfo());
-  append('agent', 'Halo. Ketik pesan untuk memulai percakapan, atau /help untuk daftar perintah.');
+  append('plain', 'Halo. Ketik pesan untuk memulai percakapan, atau /help untuk daftar perintah.');
   return screen;
 }
 
