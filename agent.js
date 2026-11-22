@@ -9,6 +9,7 @@ const { TOOLS } = require('./src/tools');
 const sess = require('./src/browser');
 const geminiWeb = require('./src/geminiWeb');
 const tui = require('./src/tui');
+const store = require('./src/sessionStore');
 
 const COLOR = process.stdout.isTTY && !process.env.NO_COLOR;
 const c = {
@@ -200,9 +201,9 @@ async function main() {
   if (opts.login) { console.log(await loginInfo()); return; }
   if (!(await ensureConfig(opts))) return;
   if (opts.fresh) {
-    try { fs.unlinkSync(path.join(cfg.root, '.sessions', 'chat.json')); } catch { /* tidak ada */ }
+    const id = store.create();
     geminiWeb.reset();
-    console.log('riwayat lama dihapus — sesi baru dimulai.');
+    console.log(`sesi baru ${id} — sesi lama tetap tersimpan, lihat dengan /sessions.`);
   }
   if (opts.session) console.log('noVNC: ' + await sess.start());
 

@@ -29,9 +29,11 @@ langsung di panel yang sama. Tekan `Ctrl+C` untuk keluar.
 
 Riwayat percakapan tersimpan otomatis di `.sessions/chat.json` (chmod 600) dan **dimuat
 kembali saat TUI dibuka**: cukup jalankan `hafitri`, percakapan sebelumnya langsung tampil
-dan menjadi konteks pesan berikutnya. `/history` menampilkan info riwayat, `/reset` (alias `/new`) menghapusnya,
-`/clear` hanya mengosongkan layar tanpa menghapus riwayat. Dari shell, jalankan
-`hafitri --new` untuk langsung memulai sesi baru tanpa riwayat lama.
+dan menjadi konteks pesan berikutnya. Beberapa sesi bisa disimpan: `/new` membuat sesi baru **tanpa menghapus sesi lama**,
+`/sessions` menampilkan daftar sesi, `/load <n|id>` memuat salah satunya.
+`/reset` mengosongkan hanya sesi aktif, `/clear` hanya mengosongkan layar.
+Dari shell, `hafitri --new` langsung membuka sesi baru. Riwayat lama `chat.json`
+otomatis dimigrasikan ke format multi-sesi saat pertama dijalankan.
 
 Tema default `opencode`: latar gelap, border round, aksen ungu, marker peran berwarna
 (`❯ ANDA`, `◆ HAFITRI`, `⚙ TOOL`). Alternatif `mimo` lebih minimal dengan aksen hijau.

@@ -6,6 +6,7 @@ const cfg = require('./config');
 const { newSession, step } = require('./loop');
 const sess = require('./browser');
 const geminiWeb = require('./geminiWeb');
+const store = require('./sessionStore');
 
 const THEMES = {
   opencode: {
@@ -20,8 +21,6 @@ const THEMES = {
   },
 };
 
-const HISTORY_FILE = path.join(cfg.root, '.sessions', 'chat.json');
-
 function linkify(text) {
   const safe = String(text == null ? '' : text)
     .replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'));
@@ -32,33 +31,13 @@ function linkify(text) {
   });
 }
 
-function loadHistory() {
-  try {
-    const data = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
-    if (Array.isArray(data.messages) && data.messages.length > 1) return data;
-  } catch { /* belum ada riwayat */ }
-  return null;
-}
-
-function saveHistory(messages) {
-  if (!messages || messages.length < 2) return;
-  try {
-    fs.mkdirSync(path.dirname(HISTORY_FILE), { recursive: true });
-    fs.writeFileSync(HISTORY_FILE, JSON.stringify({
-      version: 1,
-      updatedAt: new Date().toISOString(),
-      provider: cfg.provider,
-      model: cfg.provider === 'gemini-web' ? cfg.geminiModel : cfg.model,
-      messages,
-    }, null, 2));
-    fs.chmodSync(HISTORY_FILE, 0o600);
-  } catch { /* gagal simpan: tidak mengganggu sesi */ }
-}
-
 const HELP = [
   '/help              bantuan ini',
   '/theme [nama]      opencode | mimo',
-  '/reset, /new       hapus riwayat, mulai chat baru',
+  '/new               sesi baru (sesi lama tetap tersimpan)',
+  '/sessions          daftar sesi tersimpan',
+  '/load <n|id>       muat sesi tertentu',
+  '/reset             kosongkan sesi aktif',
   '/clear             bersihkan layar (riwayat tetap tersimpan)',
   '/history           info riwayat tersimpan',
   '/login             start sesi noVNC + URL login',
@@ -133,10 +112,9 @@ function start(opts) {
   const pending = [];
   const entries = [];
 
-  const saved = loadHistory();
-  if (saved) {
-    messages = saved.messages;
-    for (const m of saved.messages.slice(-80)) {
+  function showMessages(msgs) {
+    entries.length = 0;
+    for (const m of (msgs || []).slice(-80)) {
       if (m.role === 'user') entries.push({ role: 'user', text: m.content });
       else if (m.role === 'assistant' && m.tool_calls) {
         for (const tc of m.tool_calls) {
@@ -145,16 +123,20 @@ function start(opts) {
       } else if (m.role === 'assistant' && m.content) entries.push({ role: 'agent', text: m.content });
       else if (m.role === 'tool') entries.push({ role: 'tool', text: m.content });
     }
+    renderLog();
+  }
+
+  const active = store.load();
+  if (active && active.messages && active.messages.length > 1) {
+    messages = active.messages;
+    showMessages(messages);
   }
   function historyInfo() {
-    const live = loadHistory();
-    if (live) {
-      return `riwayat tersimpan: ${live.messages.length} pesan (${new Date(live.updatedAt).toLocaleString('id-ID')}) — satu sesi aktif, /reset untuk mulai baru`;
-    }
-    if (messages && messages.length > 1) {
-      return `sesi ini: ${messages.length} pesan — tersimpan otomatis setelah jawaban selesai`;
-    }
-    return 'belum ada riwayat. Satu sesi aktif; tersimpan otomatis setelah jawaban pertama. /reset untuk mulai baru.';
+    const id = store.activeId();
+    const cur = id ? store.load(id) : null;
+    const total = store.list().length;
+    if (cur) return `sesi aktif: ${id} — ${(cur.messages || []).length} pesan | "${cur.title}" | ${total} sesi tersimpan | /sessions`;
+    return 'belum ada sesi tersimpan. /new untuk membuat sesi baru.';
   }
 
   function providerLabel() {
@@ -250,15 +232,44 @@ function start(opts) {
       case 'history':
         notify(historyInfo());
         break;
-      case 'new':
+      case 'new': {
+        if (messages && messages.length > 1) store.save(store.activeId(), messages);
+        const id = store.create();
+        messages = null;
+        pending.length = 0;
+        geminiWeb.reset();
+        showMessages([]);
+        notify(`sesi baru ${id} — sesi lama tetap tersimpan, /sessions untuk melihat`);
+        break;
+      }
+      case 'sessions': {
+        const rows = store.list().map((s, i) => {
+          const mark = s.id === store.activeId() ? '*' : ' ';
+          return `${mark}[${i + 1}] ${s.id} | ${s.title} | ${s.count} pesan | ${new Date(s.updatedAt).toLocaleString('id-ID')}`;
+        });
+        notify(rows.length ? rows.join('\n') : 'belum ada sesi tersimpan');
+        break;
+      }
+      case 'load': {
+        const list = store.list();
+        const picked = /^\d+$/.test(arg) ? list[parseInt(arg, 10) - 1] : list.find((s) => s.id === arg);
+        if (!picked) { notify('pakai: /load <nomor dari /sessions> atau /load <id>'); break; }
+        store.setActive(picked.id);
+        const data = store.load(picked.id);
+        messages = data && data.messages && data.messages.length > 1 ? data.messages : null;
+        pending.length = 0;
+        geminiWeb.reset();
+        showMessages(messages);
+        notify(`sesi ${picked.id} dimuat — ${picked.title}`);
+        break;
+      }
       case 'reset':
         messages = null;
         pending.length = 0;
         geminiWeb.reset();
-        try { fs.unlinkSync(HISTORY_FILE); } catch { /* tidak ada */ }
-        entries.length = 0;
-        renderLog();
-        notify('riwayat dihapus — percakapan baru dimulai');
+        store.save(store.activeId(), []);
+        showMessages([]);
+        notify('sesi aktif dikosongkan — sesi lain tetap tersimpan');
         break;
       case 'login':
         notify(await sess.start());
@@ -329,7 +340,7 @@ function start(opts) {
       append('error', 'ERROR: ' + (e && e.message ? e.message : String(e)));
     } finally {
       busy = false;
-      saveHistory(messages);
+      store.save(store.activeId(), messages);
       focusInput();
       drawStatus(pending.length ? `${pending.length} prompt menunggu` : 'siap');
       if (pending.length) setImmediate(() => handle(pending.shift()));
