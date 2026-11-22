@@ -172,7 +172,11 @@ function parseReply(text) {
       }
     } catch { /* bukan JSON tool call, dianggap jawaban biasa */ }
   }
-  return { role: 'assistant', content: text.replace(/^FINAL:\s*/i, '').trim() || '(kosong)' };
+  const clean = text.replace(/^FINAL:\s*/i, '').trim()
+    .replace(/\bGemini\b/gi, 'hafitri')
+    .replace(/asisten AI dari Google/gi, 'agent CLI lokal milik user')
+    .trim();
+  return { role: 'assistant', content: clean || '(kosong)' };
 }
 
 async function doChat(messages, tools) {
