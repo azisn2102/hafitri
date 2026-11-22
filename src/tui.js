@@ -66,6 +66,12 @@ function start(opts) {
     screen.render();
   }
 
+  // inputOnFocus:true menambah listener keypress tiap kali focus dipanggil.
+  // Memanggil focus() saat sudah fokus membuat karakter terbaca dua kali.
+  function focusInput() {
+    if (screen.focused !== input) input.focus();
+  }
+
   function append(who, text) {
     const prefix = who ? `${who}: ` : '';
     for (const line of String(text == null ? '' : text).split('\n')) log.pushLine(prefix + line);
@@ -141,7 +147,7 @@ function start(opts) {
     if (!line) return;
     if (line.startsWith('/')) {
       try { await command(line); } catch (e) { append('hafitri', 'ERROR: ' + e.message); }
-      input.focus();
+      focusInput();
       return;
     }
     if (busy) {
@@ -167,7 +173,7 @@ function start(opts) {
       append('hafitri', 'ERROR: ' + (e && e.message ? e.message : String(e)));
     } finally {
       busy = false;
-      input.focus();
+      focusInput();
       drawStatus(pending.length ? `${pending.length} prompt menunggu` : 'siap');
       if (pending.length) setImmediate(() => handle(pending.shift()));
     }
@@ -182,7 +188,7 @@ function start(opts) {
     screen.render();
     // Tunda satu tick: blessed masih menyelesaikan event Enter saat submit dipancarkan.
     setImmediate(() => {
-      input.focus();
+      focusInput();
       handle(line);
     });
   });
