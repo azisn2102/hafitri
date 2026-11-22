@@ -105,7 +105,7 @@ function start(opts) {
   const notice = blessed.box({
     top: 3, left: 2, width: '86%', height: '70%',
     label: ' INFO ', border: { type: 'round' }, tags: false,
-    hidden: true, scrollable: true, keys: true, mouse: true,
+    hidden: true, scrollable: true, keys: false, mouse: false,
     padding: { left: 1, right: 1 },
     style: { fg: palette.text, bg: palette.panel, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },
   });
@@ -124,7 +124,7 @@ function start(opts) {
     screen.render();
     if (noticeTimer) clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => { notice.hide(); screen.render(); }, ms);
-    if (screen.focused !== input) input.focus();
+    focusInput();
   }
 
   let messages = null;
@@ -149,12 +149,12 @@ function start(opts) {
   function historyInfo() {
     const live = loadHistory();
     if (live) {
-      return `riwayat tersimpan: ${live.messages.length} pesan (${new Date(live.updatedAt).toLocaleString('id-ID')})`;
+      return `riwayat tersimpan: ${live.messages.length} pesan (${new Date(live.updatedAt).toLocaleString('id-ID')}) — satu sesi aktif, /reset untuk mulai baru`;
     }
     if (messages && messages.length > 1) {
       return `sesi ini: ${messages.length} pesan — tersimpan otomatis setelah jawaban selesai`;
     }
-    return 'belum ada riwayat. Riwayat tersimpan otomatis setelah jawaban pertama selesai.';
+    return 'belum ada riwayat. Satu sesi aktif; tersimpan otomatis setelah jawaban pertama. /reset untuk mulai baru.';
   }
 
   function providerLabel() {
@@ -167,6 +167,7 @@ function start(opts) {
   // Fokus ganda membuat tiap karakter terbaca dua kali.
   function focusInput() {
     if (screen.focused !== input) input.focus();
+    else if (!input.__listener) input.readInput();
   }
 
   function applyTheme(name) {
@@ -340,6 +341,14 @@ function start(opts) {
       focusInput();
       handle(line);
     });
+  });
+  // ESC menutup panel INFO. Jangan biarkan textbox menganggap ESC sebagai "cancel input".
+  input.on('keypress', (ch, key) => {
+    if (key && key.name === 'escape') {
+      key.name = '';
+      if (!notice.hidden) { notice.hide(); screen.render(); }
+      focusInput();
+    }
   });
   input.key('C-c', () => { screen.destroy(); process.exit(0); });
   screen.key('C-c', () => { screen.destroy(); process.exit(0); });
