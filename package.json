@@ -1,0 +1,17 @@
+{
+  "name": "ai-agent",
+  "version": "0.1.0",
+  "description": "Agent CLI lokal: otomasi tugas, asisten coding, riset web + sesi login noVNC",
+  "main": "agent.js",
+  "bin": {
+    "hafitri": "./agent.js"
+  },
+  "scripts": {
+    "start": "node agent.js",
+    "check": "node --check agent.js && node --check src/*.js && node --check src/tools/*.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

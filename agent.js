@@ -1,0 +1,176 @@
+#!/usr/bin/env node
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+const cfg = require('./src/config');
+const { newSession, step } = require('./src/loop');
+const { TOOLS } = require('./src/tools');
+const sess = require('./src/browser');
+
+const COLOR = process.stdout.isTTY && !process.env.NO_COLOR;
+const c = {
+  dim: (s) => (COLOR ? `\x1b[2m${s}\x1b[0m` : s),
+  bold: (s) => (COLOR ? `\x1b[1m${s}\x1b[0m` : s),
+  green: (s) => (COLOR ? `\x1b[32m${s}\x1b[0m` : s),
+  yellow: (s) => (COLOR ? `\x1b[33m${s}\x1b[0m` : s),
+};
+
+function usage() {
+  console.log(`agent — agent CLI lokal (otomasi, coding, riset web)
+
+Pemakaian:
+  node agent.js "tugas"           jalankan sekali lalu keluar
+  node agent.js                   mode REPL interaktif
+  node agent.js --session         REPL + langsung start sesi noVNC
+  node agent.js --steps 40 "..."  batasi langkah tool
+
+Opsi: --yolo (izinkan perintah berisiko tanpa tanya), --help
+REPL: /help /tools /reset /session start|stop|status|url /yolo /steps /model /quit`);
+}
+
+function ask(rl, question) {
+  return new Promise((resolve) => rl.question(question, resolve));
+}
+
+async function ensureKey() {
+  if (cfg.apiKey) return true;
+  if (!process.stdin.isTTY) {
+    console.error(c.yellow('AI_API_KEY belum ada. Buat /home/ai-agent/.env dari .env.example lalu isi API key.'));
+    return false;
+  }
+  console.log(c.yellow('\nWizard setup — API key model (OpenAI-compatible).'));
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const key = (await ask(rl, 'AI_API_KEY: ')).trim();
+    if (!key) throw new Error('API key kosong');
+    const base = (await ask(rl, `AI_BASE_URL [${cfg.baseUrl}]: `)).trim() || cfg.baseUrl;
+    const model = (await ask(rl, `AI_MODEL [${cfg.model}]: `)).trim() || cfg.model;
+    const envPath = path.join(cfg.root, '.env');
+    fs.writeFileSync(envPath, `# agent config (jangan dibagikan)\nAI_BASE_URL=${base}\nAI_API_KEY=${key}\nAI_MODEL=${model}\n`);
+    fs.chmodSync(envPath, 0o600);
+    Object.assign(cfg, { apiKey: key, baseUrl: base.replace(/\/+$/, ''), model });
+    console.log(c.green(`Tersimpan di ${envPath} (chmod 600).\n`));
+    return true;
+  } finally {
+    rl.close();
+  }
+}
+
+function printTool(ev) {
+  const args = JSON.stringify(ev.args || {});
+  const argShort = args.length > 240 ? args.slice(0, 240) + '…' : args;
+  console.log(`  ${c.bold('▸')} ${c.bold(ev.name)} ${c.dim(argShort)}`);
+  const lines = String(ev.result || '').split('\n');
+  const preview = lines.slice(0, 14).join('\n');
+  const shown = preview.length > 1400 ? preview.slice(0, 1400) + '…' : preview;
+  console.log(c.dim(shown.split('\n').map((l) => '    ' + l).join('\n')));
+  if (lines.length > 14) console.log(c.dim(`    ... (${lines.length - 14} baris lagi)`));
+}
+
+async function runTask(messages, opts) {
+  let spent = 0;
+  const answer = await step(messages, opts, (ev) => {
+    spent++;
+    printTool(ev);
+  });
+  console.log(`\n${c.green('agent:')} ${answer}\n`);
+  if (spent) console.log(c.dim(`(${spent} tool call)`));
+  return answer;
+}
+
+async function repl(opts) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  let messages = null;
+  console.log(c.bold(`agent v0.1`) + c.dim(` | model: ${cfg.model} | ${cfg.baseUrl} | /help`));
+
+  rl.on('SIGINT', () => {
+    console.log('\n(tekan /quit atau Ctrl+D untuk keluar)');
+  });
+
+  while (true) {
+    let line;
+    try { line = await new Promise((resolve) => rl.question('agent> ', resolve)); }
+    catch { break; }
+    line = line.trim();
+    if (!line) continue;
+    if (line.startsWith('/')) {
+      const [cmd, ...rest] = line.slice(1).split(/\s+/);
+      const arg = rest.join(' ');
+      try {
+        if (cmd === 'quit' || cmd === 'exit') { rl.close(); break; }
+        if (cmd === 'help') {
+          console.log('/help              bantuan ini\n' +
+            '/tools             daftar tool\n' +
+            '/reset             hapus riwayat percakapan\n' +
+            '/session start     start Xvfb + browser + noVNC\n' +
+            '/session stop      matikan sesi browser\n' +
+            '/session status    cek status\n' +
+            '/session url       URL noVNC untuk login manual\n' +
+            '/yolo [on|off]     izinkan perintah berisiko\n' +
+            '/steps N           batas langkah tool\n' +
+            '/model <nama>      ganti model LLM\n' +
+            '/quit              keluar');
+        } else if (cmd === 'tools') {
+          console.log(TOOLS.map((t) => `  ${t.name} — ${t.description.split('.')[0]}`).join('\n'));
+        } else if (cmd === 'reset') {
+          messages = null;
+          console.log('riwayat direset');
+        } else if (cmd === 'session') {
+          if (arg === 'start') console.log(await sess.start());
+          else if (arg === 'stop') console.log('dimatikan: ' + (sess.stop().join(', ') || '(tidak ada proses)'));
+          else if (arg === 'status') console.log(await sess.status());
+          else if (arg === 'url') console.log(sess.novncUrl());
+          else console.log('pakai: /session start|stop|status|url');
+        } else if (cmd === 'yolo') {
+          opts.yolo = arg !== 'off';
+          console.log('yolo = ' + opts.yolo);
+        } else if (cmd === 'steps') {
+          const n = parseInt(arg, 10);
+          if (!n) console.log('pakai: /steps 40');
+          else { opts.maxSteps = n; console.log('maxSteps = ' + n); }
+        } else if (cmd === 'model') {
+          if (!arg) console.log('pakai: /model <nama-model>');
+          else { cfg.model = arg; console.log('model = ' + arg); }
+        } else {
+          console.log('perintah tidak dikenal: /' + cmd);
+        }
+      } catch (e) {
+        console.log(c.yellow('ERROR: ' + e.message));
+      }
+      continue;
+    }
+    if (!messages) messages = newSession(line);
+    else messages.push({ role: 'user', content: line });
+    try { await runTask(messages, opts); }
+    catch (e) { console.log(c.yellow('ERROR: ' + e.message)); }
+  }
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false };
+  const parts = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--yolo') opts.yolo = true;
+    else if (a === '--session') opts.session = true;
+    else if (a === '--steps') opts.maxSteps = parseInt(argv[++i], 10) || cfg.maxSteps;
+    else if (a === '--help' || a === '-h') { usage(); return; }
+    else parts.push(a);
+  }
+  if (!(await ensureKey())) return;
+  if (opts.session) console.log('noVNC: ' + await sess.start());
+
+  const task = parts.join(' ').trim();
+  if (task) {
+    await runTask(newSession(task), opts);
+  } else {
+    await repl(opts);
+  }
+}
+
+main().catch((e) => {
+  console.error(c.yellow('FATAL: ' + (e && e.stack ? e.stack : e)));
+  process.exitCode = 1;
+});
