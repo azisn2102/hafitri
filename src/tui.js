@@ -253,9 +253,12 @@ function start(opts) {
       case 'new':
       case 'reset':
         messages = null;
+        pending.length = 0;
         geminiWeb.reset();
         try { fs.unlinkSync(HISTORY_FILE); } catch { /* tidak ada */ }
-        notify('riwayat dihapus — tugas berikutnya mulai percakapan baru');
+        entries.length = 0;
+        renderLog();
+        notify('riwayat dihapus — percakapan baru dimulai');
         break;
       case 'login':
         notify(await sess.start());
