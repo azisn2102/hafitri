@@ -27,6 +27,10 @@ antar pesan — tidak perlu mengulang konteks. Perintah `/reset` memulai chat ba
 `/clear` hanya mengosongkan layar, `/help` menampilkan semua perintah. Tool call tampil
 langsung di panel yang sama. Tekan `Ctrl+C` untuk keluar.
 
+Tema default `opencode`: latar gelap, border round, aksen ungu, marker peran berwarna
+(`❯ ANDA`, `◆ HAFITRI`, `⚙ TOOL`). Alternatif `mimo` lebih minimal dengan aksen hijau.
+Ganti kapan saja lewat `/theme mimo` atau `/theme opencode`.
+
 Secara default agent memakai **Gemini web** (`AI_PROVIDER=gemini-web`) lewat sesi login browser
 yang sudah Anda buka di noVNC — **tanpa API key**. Model dipilih lewat dropdown di halaman Gemini:
 `GEMINI_MODEL=auto` (default, paling stabil), `flash` (model cepat), `pro` (analisis dalam).
