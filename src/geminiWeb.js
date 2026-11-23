@@ -8,6 +8,14 @@ let conn = null;
 let modelReady = false;
 let sentCount = 0;
 let queue = Promise.resolve();
+let tuiMode = false;
+
+/** Progres hanya di CLI/REPL; di TUI stderr akan merusak layar blessed. */
+function progress(msg) {
+  if (!tuiMode) console.error('[gemini] ' + msg);
+}
+
+function setTui(on) { tuiMode = !!on; }
 
 // Di akun ini opsi cepat bernama "Bantuan sehari-hari/Hydrogen" (sering macet),
 // jadi "flash" dipetakan ke "Otomatis" yang otomatis memilih model cepat.
@@ -34,13 +42,20 @@ async function evaluate(c, expression) {
 
 async function selectModel() {
   const keys = MODEL_KEYS[cfg.geminiModel] || MODEL_KEYS.auto;
-  const opened = await evaluate(conn, `(() => {
+  const openExpr = `(() => {
     const b = [...document.querySelectorAll('button')].find(e => /pemilih mode|mode picker/i.test(e.getAttribute('aria-label') || ''));
     if (!b) return false;
     b.click();
     return true;
-  })()`);
-  if (!opened) throw new Error('Tombol pemilih model Gemini tidak ditemukan');
+  })()`;
+  let opened = false;
+  try { opened = await evaluate(conn, openExpr); } catch { /* halaman belum siap */ }
+  if (!opened) {
+    await sleep(1500);
+    try { opened = await evaluate(conn, openExpr); } catch { /* abaikan */ }
+  }
+  // UI Gemini sering berubah; gagal memilih model TIDAK boleh menggagalkan tugas.
+  if (!opened) { progress('pemilih model tidak ditemukan — pakai model aktif'); return false; }
   await sleep(700);
   const res = await evaluate(conn, `(() => {
     const items = [...document.querySelectorAll('gem-menu-item[role="menuitemradio"]')];
@@ -50,15 +65,17 @@ async function selectModel() {
     pick.click();
     return 'ok';
   })()`);
-  if (res !== 'ok') throw new Error('Model Gemini tidak tersedia — ' + res);
+  if (res !== 'ok') { progress('model tidak tersedia — pakai model aktif (' + String(res).slice(0, 120) + ')'); return false; }
   await sleep(900);
+  return true;
 }
 
 async function ensurePage() {
-  if (!conn) conn = await sess.cdp();
+  if (!conn) { conn = await sess.cdp(); progress('browser tersambung'); }
   let url = '';
   try { url = await evaluate(conn, 'location.href'); } catch { /* baru saja navigasi */ }
   if (!/gemini\.google\.com/.test(url || '')) {
+    progress('buka Gemini...');
     await conn.send('Page.enable');
     await conn.send('Page.navigate', { url: cfg.geminiUrl });
     for (let i = 0; i < 30; i++) {
@@ -74,13 +91,14 @@ async function ensurePage() {
       const a = document.querySelector('a[aria-label="Chat baru"]');
       if (a) a.click();
       return !!a;
-    })()`);
+    })()`).catch(() => {});
     await sleep(1300);
   }
   if (!modelReady) {
     await selectModel();
-    modelReady = true;
+    modelReady = true; // jangan retry tiap pesan kalau UI pemilih berubah
   }
+  progress('halaman Gemini siap — kirim prompt');
 }
 
 function buildPrompt(messages, fresh, tools) {
@@ -141,12 +159,14 @@ function clean(text) {
     .trim();
 }
 
-async function waitResponse(timeoutMs = 120000) {
+async function waitResponse(timeoutMs = 60000) {
   const t0 = Date.now();
   let last = '';
   let stable = 0;
+  let warned = false;
   while (Date.now() - t0 < timeoutMs) {
     await sleep(800);
+    if (!warned && Date.now() - t0 > 20000) { progress('masih menunggu respons Gemini...'); warned = true; }
     const state = await evaluate(conn, `(() => ({
       busy: [...document.querySelectorAll('button')].some(e => /Hentikan respons|Stop response/i.test(e.getAttribute('aria-label') || '')),
       text: (() => { const els = [...document.querySelectorAll('structured-content-container.model-response-text')]; return els.length ? els[els.length - 1].innerText.trim() : ''; })(),
@@ -155,7 +175,7 @@ async function waitResponse(timeoutMs = 120000) {
     else { last = state.text; stable = 0; }
     if (!state.busy && last && stable >= 2) return clean(last);
   }
-  throw new Error('Respons Gemini timeout/macet. Coba GEMINI_MODEL=auto di .env.');
+  throw new Error('Respons Gemini timeout setelah 60 detik. Coba lagi atau pakai /model auto.');
 }
 
 function parseReply(text) {
@@ -196,10 +216,11 @@ async function doChat(messages, tools) {
 
   // Gemini web kadang tetap menjawab "saya hanya model bahasa". Koreksi sekali.
   const ask = fresh.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
-  const wantsAction = /\b(jalankan|bantu|update|install|cek|buka|tulis|hapus|apt|npm|git|curl|ls)\b/i.test(ask);
+  const wantsAction = /\b(jalankan|eksekusi|install|update|apt|npm|git|curl|node|ls|hapus|tulis file|buka web)\b/i.test(ask);
   if (!msg.tool_calls && wantsAction) {
+    progress('model belum memanggil tool — koreksi sekali');
     await sendPrompt('Kamu belum memanggil tool. Balas HANYA satu baris TOOL_CALL untuk tugas di atas, misalnya: TOOL_CALL: {"name":"shell","arguments":{"command":"node -v"}}');
-    msg = parseReply(await waitResponse());
+    msg = parseReply(await waitResponse(45000));
   }
   return msg;
 }
@@ -215,4 +236,13 @@ function reset() {
   sentCount = 0;
 }
 
-module.exports = { chat, reset };
+/** Tutup WebSocket CDP supaya proses CLI bisa keluar setelah tugas selesai. */
+function close() {
+  if (!conn) return;
+  try { conn.close(); } catch { /* sudah tertutup */ }
+  conn = null;
+  modelReady = false;
+  sentCount = 0;
+}
+
+module.exports = { chat, reset, setTui, close };

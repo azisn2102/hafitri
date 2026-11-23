@@ -123,7 +123,7 @@ async function repl(opts) {
       const [cmd, ...rest] = line.slice(1).split(/\s+/);
       const arg = rest.join(' ');
       try {
-        if (cmd === 'quit' || cmd === 'exit') { rl.close(); break; }
+        if (cmd === 'quit' || cmd === 'exit') { geminiWeb.close(); rl.close(); break; }
         if (cmd === 'help') {
           console.log('/help              bantuan ini\n' +
             '/tools             daftar tool\n' +
@@ -210,6 +210,7 @@ async function main() {
   const task = parts.join(' ').trim();
   if (task) {
     await runTask(newSession(task), opts);
+    geminiWeb.close(); // lepas WebSocket CDP, kalau tidak proses menggantung setelah selesai
   } else if (opts.tui || (!opts.plain && process.stdin.isTTY)) {
     tui.start(opts);
   } else {

@@ -109,6 +109,7 @@ const HELP = [
 /** TUI full-screen bertema agent CLI modern: satu sesi, percakapan berlanjut. */
 function start(opts) {
   if (!process.stdin.isTTY) throw new Error('TUI membutuhkan terminal interaktif (TTY).');
+  geminiWeb.setTui(true); // jangan tulis log progres ke stderr, nanti merusak layar
 
   let theme = 'opencode';
   let palette = THEMES[theme];
