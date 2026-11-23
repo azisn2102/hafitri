@@ -135,7 +135,8 @@ async function repl(opts) {
             '/session url       URL noVNC untuk login manual\n' +
             '/yolo [on|off]     izinkan perintah berisiko\n' +
             '/steps N           batas langkah tool\n' +
-            '/model <nama>      ganti model (auto|flash|pro untuk Gemini web)\n' +
+            '/model <nama>      ganti model (auto|flash|hydrogen|pro untuk Gemini web)\n' +
+            '/reasoning <level> rendah|menengah|tinggi|off (khusus Hydrogen)\n' +
             '/quit              keluar');
         } else if (cmd === 'tools') {
           console.log(TOOLS.map((t) => `  ${t.name} — ${t.description.split('.')[0]}`).join('\n'));
@@ -163,8 +164,11 @@ async function repl(opts) {
           else if (cfg.provider === 'gemini-web') {
             cfg.geminiModel = arg;
             geminiWeb.reset();
-            console.log('model Gemini = ' + arg + ' (auto|flash|pro)');
+            console.log('model Gemini = ' + arg + ' (auto|flash|hydrogen|pro)');
           } else { cfg.model = arg; console.log('model = ' + arg); }
+        } else if (cmd === 'reasoning') {
+          if (cfg.provider !== 'gemini-web') console.log('/reasoning hanya untuk Gemini web');
+          else console.log('penalaran Hydrogen: ' + (geminiWeb.setReasoning(arg) || 'mati'));
         } else {
           console.log('perintah tidak dikenal: /' + cmd);
         }

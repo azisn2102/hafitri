@@ -100,7 +100,8 @@ const HELP = [
   '/session stop      matikan sesi browser',
   '/session status    cek status sesi',
   '/session url       URL noVNC',
-  '/model <nama>      auto|flash|pro (Gemini) atau nama model API',
+  '/model <nama>      auto|flash|hydrogen|pro (Gemini) atau nama model API',
+  '/reasoning <level> rendah|menengah|tinggi|off (khusus Hydrogen)',
   '/yolo [on|off]     izinkan perintah berisiko',
   '/steps N           batas langkah tool',
   '/quit              keluar',
@@ -440,12 +441,21 @@ function start(opts) {
         else if (cfg.provider === 'gemini-web') {
           cfg.geminiModel = arg;
           geminiWeb.reset();
-          notify(`model Gemini = ${arg} (auto|flash|pro)`);
+          notify(`model Gemini = ${arg} (auto|flash|hydrogen|pro)`);
         } else {
           cfg.model = arg;
           notify('model = ' + arg);
         }
         drawHeader();
+        break;
+      case 'reasoning':
+        if (cfg.provider !== 'gemini-web') notify('/reasoning hanya untuk Gemini web');
+        else {
+          const level = geminiWeb.setReasoning(arg);
+          notify(arg === 'off' || !arg
+            ? `penalaran Hydrogen: ${level || 'mati'} — pakai /reasoning rendah|menengah|tinggi|off`
+            : `penalaran Hydrogen: ${level}${cfg.geminiModel === 'hydrogen' ? '' : ' (aktif setelah /model hydrogen)'}`);
+        }
         break;
       default:
         notify('perintah tidak dikenal: /' + cmd);

@@ -45,7 +45,10 @@ Ganti kapan saja lewat `/theme mimo` atau `/theme opencode`.
 
 Secara default agent memakai **Gemini web** (`AI_PROVIDER=gemini-web`) lewat sesi login browser
 yang sudah Anda buka di noVNC — **tanpa API key**. Model dipilih lewat dropdown di halaman Gemini:
-`GEMINI_MODEL=auto` (default, paling stabil), `flash` (model cepat), `pro` (analisis dalam).
+`GEMINI_MODEL=auto` (default, paling stabil), `flash` (model cepat), `hydrogen` (Bantuan sehari-hari
+/ 4 Hydrogen), `pro` (analisis dalam / 4 Neon). Untuk Hydrogen, atur kedalaman berpikir dengan
+`/reasoning rendah|menengah|tinggi` (kata kunci `off` menonaktifkan). Level ini disisipkan ke prompt
+karena Gemini web tidak mengekspos kontrol UI-nya ke CDP.
 Di akun yang opsi cepatnya bernama "Hydrogen", `flash` dipetakan ke mode **Otomatis** karena
 Hydrogen sering macet; `pro` dipetakan ke "Analisis lebih dalam/Neon".
 

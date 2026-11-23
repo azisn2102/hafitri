@@ -35,8 +35,12 @@ Bila sudah selesai atau hanya menjawab pertanyaan, awali dengan FINAL: lalu jawa
 const MODEL_KEYS = {
   auto: ['Otomatis', 'Automatic'],
   flash: ['Otomatis', 'Automatic', 'Flash'],
+  hydrogen: ['Bantuan sehari-hari', 'Hydrogen'],
   pro: ['Analisis lebih dalam', 'Neon', 'Pro'],
 };
+
+const REASONING = { rendah: 'Rendah', menengah: 'Menengah', tinggi: 'Tinggi' };
+let reasoningLevel = null; // hanya dipakai saat model Hydrogen
 
 async function evaluate(c, expression) {
   const res = await c.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
@@ -110,6 +114,9 @@ async function ensurePage() {
 function buildPrompt(messages, fresh, tools) {
   const out = [];
   if (sentCount === 0) out.push(GEMINI_SYSTEM);
+  if (reasoningLevel && cfg.geminiModel === 'hydrogen') {
+    out.push(`TINGKAT PENALARAN (mode Hydrogen): ${reasoningLevel}. Sesuaikan kedalaman analisis dengan level ini: Rendah = jawab cepat dan ringkas; Menengah = seimbang; Tinggi = pikirkan langkah dan alternatif lebih matang sebelum menjawab.`);
+  }
   for (const m of fresh) {
     if (m.role === 'user') {
       out.push('PESAN USER:\n' + m.content);
@@ -413,6 +420,14 @@ async function chat(messages, tools) {
 
 function reset() {
   sentCount = 0;
+  modelReady = false; // /model harus benar-benar mengganti model di picker
+}
+
+function setReasoning(level) {
+  if (!level) { reasoningLevel = null; return reasoningLevel; }
+  const key = String(level).toLowerCase();
+  reasoningLevel = REASONING[key] || null;
+  return reasoningLevel;
 }
 
 /** Tutup WebSocket CDP supaya proses CLI bisa keluar setelah tugas selesai. */
@@ -424,4 +439,4 @@ function close() {
   sentCount = 0;
 }
 
-module.exports = { chat, reset, setTui, close, _parseReply: parseReply };
+module.exports = { chat, reset, setTui, close, setReasoning, _parseReply: parseReply };
