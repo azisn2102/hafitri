@@ -107,6 +107,7 @@ async function ensurePage() {
   if (!modelReady) {
     await selectModel();
     modelReady = true; // jangan retry tiap pesan kalau UI pemilih berubah
+    if (cfg.geminiModel === 'hydrogen') await applyReasoning();
   }
   progress('halaman Gemini siap — kirim prompt');
 }
@@ -114,9 +115,6 @@ async function ensurePage() {
 function buildPrompt(messages, fresh, tools) {
   const out = [];
   if (sentCount === 0) out.push(GEMINI_SYSTEM);
-  if (reasoningLevel && cfg.geminiModel === 'hydrogen') {
-    out.push(`TINGKAT PENALARAN (mode Hydrogen): ${reasoningLevel}. Sesuaikan kedalaman analisis dengan level ini: Rendah = jawab cepat dan ringkas; Menengah = seimbang; Tinggi = pikirkan langkah dan alternatif lebih matang sebelum menjawab.`);
-  }
   for (const m of fresh) {
     if (m.role === 'user') {
       out.push('PESAN USER:\n' + m.content);
@@ -208,6 +206,35 @@ async function setImageMode(on) {
     await sleep(300);
   }
   return true;
+}
+
+/** Klik radio "Tingkat penalaran" di menu model (hanya ada saat Hydrogen aktif). */
+async function applyReasoning() {
+  if (!reasoningLevel || !conn) return false;
+  const pickerExpr = `(() => {
+    const b = [...document.querySelectorAll('button')].find(e => /pemilih mode|mode picker/i.test(e.getAttribute('aria-label') || ''));
+    if (!b) return false;
+    if (b.getAttribute('aria-expanded') !== 'true') b.click();
+    return true;
+  })()`;
+  await evaluate(conn, pickerExpr);
+  await sleep(800);
+  const clicked = await evaluate(conn, `(() => {
+    const items = [...document.querySelectorAll('gem-menu-item[role="menuitemradio"]')];
+    const i = items.find(e => (e.innerText || '').trim().startsWith(${JSON.stringify(reasoningLevel)}));
+    if (!i) return false;
+    i.click();
+    return true;
+  })()`);
+  await sleep(500);
+  const closeExpr = `(() => {
+    const b = [...document.querySelectorAll('button')].find(e => /pemilih mode|mode picker/i.test(e.getAttribute('aria-label') || ''));
+    if (b && b.getAttribute('aria-expanded') === 'true') b.click();
+    return true;
+  })()`;
+  await evaluate(conn, closeExpr);
+  if (clicked) progress('tingkat penalaran Hydrogen: ' + reasoningLevel);
+  return clicked;
 }
 
 function clean(text) {
@@ -423,10 +450,13 @@ function reset() {
   modelReady = false; // /model harus benar-benar mengganti model di picker
 }
 
-function setReasoning(level) {
-  if (!level) { reasoningLevel = null; return reasoningLevel; }
-  const key = String(level).toLowerCase();
-  reasoningLevel = REASONING[key] || null;
+async function setReasoning(level) {
+  if (!level || String(level).toLowerCase() === 'off') reasoningLevel = null;
+  else reasoningLevel = REASONING[String(level).toLowerCase()] || null;
+  if (reasoningLevel && conn && modelReady && cfg.geminiModel === 'hydrogen') {
+    const ok = await applyReasoning();
+    if (!ok) progress('tingkat penalaran belum bisa diterapkan — cek /model hydrogen');
+  }
   return reasoningLevel;
 }
 

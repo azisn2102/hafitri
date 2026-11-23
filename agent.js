@@ -168,7 +168,7 @@ async function repl(opts) {
           } else { cfg.model = arg; console.log('model = ' + arg); }
         } else if (cmd === 'reasoning') {
           if (cfg.provider !== 'gemini-web') console.log('/reasoning hanya untuk Gemini web');
-          else console.log('penalaran Hydrogen: ' + (geminiWeb.setReasoning(arg) || 'mati'));
+          else console.log('penalaran Hydrogen: ' + ((await geminiWeb.setReasoning(arg)) || 'mati'));
         } else {
           console.log('perintah tidak dikenal: /' + cmd);
         }

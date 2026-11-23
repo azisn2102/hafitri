@@ -451,7 +451,7 @@ function start(opts) {
       case 'reasoning':
         if (cfg.provider !== 'gemini-web') notify('/reasoning hanya untuk Gemini web');
         else {
-          const level = geminiWeb.setReasoning(arg);
+          const level = await geminiWeb.setReasoning(arg);
           notify(arg === 'off' || !arg
             ? `penalaran Hydrogen: ${level || 'mati'} — pakai /reasoning rendah|menengah|tinggi|off`
             : `penalaran Hydrogen: ${level}${cfg.geminiModel === 'hydrogen' ? '' : ' (aktif setelah /model hydrogen)'}`);
