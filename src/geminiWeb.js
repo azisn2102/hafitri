@@ -313,27 +313,24 @@ function parseReply(text, tools) {
   };
 }
 
-/** Simpan gambar hasil Gemini lewat screenshot elemen (blob URL tidak bisa di-fetch dari CDP). */
+/** Simpan piksel asli gambar Gemini (bukan screenshot) lewat canvas naturalSize. */
 async function saveImage(dirOverride) {
-  await conn.send('Page.enable');
-  const rect = await evaluate(conn, `(() => {
+  const dataUrl = await evaluate(conn, `(async () => {
     const img = [...document.querySelectorAll('img[alt*="buatan AI"], img[src^="blob:"]')].pop();
     if (!img) return null;
-    img.scrollIntoView({ block: 'center' });
-    const r = img.getBoundingClientRect();
-    return { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.floor(r.width), height: Math.floor(r.height) };
+    await img.decode();
+    const cv = document.createElement('canvas');
+    cv.width = img.naturalWidth;
+    cv.height = img.naturalHeight;
+    cv.getContext('2d').drawImage(img, 0, 0);
+    return cv.toDataURL('image/png');
   })()`);
-  if (!rect || rect.width < 20 || rect.height < 20) throw new Error('elemen gambar tidak ditemukan');
-  await sleep(300);
-  const shot = await conn.send('Page.captureScreenshot', {
-    format: 'png',
-    clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 },
-  });
+  if (!dataUrl || !dataUrl.startsWith('data:image/')) throw new Error('gambar asli tidak bisa diambil');
   const dir = dirOverride || process.env.HAFITRI_IMAGE_DIR || path.join(cfg.root, 'downloads');
   fs.mkdirSync(dir, { recursive: true });
   // Hindari kata "Gemini" pada nama file: clean() menggantinya jadi "hafitri".
   const file = path.join(dir, `img-${Date.now()}.png`);
-  fs.writeFileSync(file, Buffer.from(shot.data || '', 'base64'));
+  fs.writeFileSync(file, Buffer.from(dataUrl.split(',')[1] || '', 'base64'));
   fs.chmodSync(file, 0o644);
   return file;
 }
