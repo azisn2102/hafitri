@@ -51,12 +51,16 @@ async function ensurePage() {
     throw new Error('Belum login ChatGPT. Buka noVNC ' + sess.novncUrl() + ' lalu login, atau jalankan: hafitri --chatgpt-login');
   }
   if (sentCount === 0) {
-    await evaluate(`(() => {
-      const b = [...document.querySelectorAll('a,button')].find(e => /New chat|Chat baru/i.test((e.innerText || '') + ' ' + (e.getAttribute('aria-label') || '')));
-      if (b) b.click();
-      return !!b;
-    })()`).catch(() => {});
-    await sleep(1200);
+    // Navigasi ke root benar-benar mengosongkan composer & mode Create image.
+    progress('chat baru...');
+    await conn.send('Page.enable');
+    await conn.send('Page.navigate', { url: cfg.chatgptUrl });
+    for (let i = 0; i < 20; i++) {
+      await sleep(500);
+      const ready = await evaluate(`!!document.querySelector('[role="textbox"][aria-label="Ask ChatGPT"]')`).catch(() => false);
+      if (ready) break;
+    }
+    await sleep(600);
   }
   progress('halaman ChatGPT siap — kirim prompt');
 }
@@ -174,11 +178,18 @@ async function saveImage(dirOverride) {
   return file;
 }
 
+function lastImageSrc() {
+  return evaluate(`(() => {
+    const im = [...document.querySelectorAll('img[alt*="Generated image"], img[src^="blob:"]')].pop();
+    return im ? im.src : '';
+  })()`);
+}
+
 function countReplies() {
   return evaluate(`(() => document.querySelectorAll('[data-message-author-role="assistant"], [class*="DilResponseRoot"]').length)()`);
 }
 
-async function waitResponse(timeoutMs = 120000, beforeCount = 0) {
+async function waitResponse(timeoutMs = 120000, beforeCount = 0, beforeImage = '') {
   const t0 = Date.now();
   let last = '', stable = 0, warned = false;
   while (Date.now() - t0 < timeoutMs) {
@@ -200,7 +211,7 @@ async function waitResponse(timeoutMs = 120000, beforeCount = 0) {
     if (sig && sig === last) stable++;
     else { last = sig; stable = 0; }
     if (state && state.count > beforeCount && !state.busy && last && stable >= 3) {
-      if (state.image) return 'IMAGE_BLOB:' + state.image;
+      if (state.image && state.image !== beforeImage) return 'IMAGE_BLOB:' + state.image;
       return state.text || last;
     }
   }
@@ -218,8 +229,9 @@ async function doChat(messages, tools) {
   if (wantsImage) await setImageMode();
   const prompt = wantsImage ? ask : buildPrompt(messages, fresh, tools);
   const before1 = await countReplies();
+  const beforeImage1 = await lastImageSrc();
   await sendPrompt(prompt);
-  let reply = await waitResponse(120000, before1);
+  let reply = await waitResponse(120000, before1, beforeImage1);
   if (reply.startsWith('IMAGE_BLOB:')) {
     progress('gambar terdeteksi — menyimpan...');
     try {
@@ -240,8 +252,9 @@ async function doChat(messages, tools) {
       : `Kamu adalah hafitri dan tool ${allowedNames} tersedia. Jangan bilang tool tidak tersedia dan jangan memberi instruksi manual.`;
     progress('tool tidak valid / belum dipanggil — koreksi sekali');
     const before2 = await countReplies();
+    const beforeImage2 = await lastImageSrc();
     await sendPrompt(`${note}\nTulis HANYA baris: PERINTAH: node -v`);
-    msg = parseReply(await waitResponse(45000, before2), tools);
+    msg = parseReply(await waitResponse(45000, before2, beforeImage2), tools);
   }
   if (msg.invalidTool) msg = { role: 'assistant', content: `Tool "${msg.invalidTool}" tidak tersedia. Tool yang bisa dipakai: ${allowedNames}.` };
   return msg;
