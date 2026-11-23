@@ -22,7 +22,10 @@ hafitri --tui --session           # TUI + langsung nyalakan sesi noVNC
 ## TUI (percakapan berlanjut dalam satu sesi)
 
 `hafitri` tanpa argumen membuka TUI full-screen: panel **Percakapan** yang bisa di-scroll,
-kolom input di bawah, dan status bar (provider/model/sesi). Riwayat percakapan dipertahankan
+kolom input di bawah, dan status bar (sesi/tema/latensi). Provider/model ditampilkan sekali
+di header. Teks jawaban di-wrap sendiri mengikuti lebar terminal (indentasi konsisten),
+markdown ringan dirender (`**tebal**`, `kode`, `# judul`, bullet, code fence), dan spinner
+`berpikir...` muncul saat menunggu. `Tab` melengkapi perintah `/`. Riwayat percakapan dipertahankan
 antar pesan — tidak perlu mengulang konteks. Perintah `/reset` memulai chat baru,
 `/clear` hanya mengosongkan layar, `/help` menampilkan semua perintah. Tool call tampil
 langsung di panel yang sama. Tekan `Ctrl+C` untuk keluar.

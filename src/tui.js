@@ -10,12 +10,12 @@ const store = require('./sessionStore');
 
 const THEMES = {
   opencode: {
-    bg: 234, panel: 236, border: 238, text: 252, muted: 245,
+    bg: 234, panel: 236, border: 238, text: 252, muted: 250,
     accent: 141, tool: 51, user: 214, error: 203, ok: 78,
     brand: '◆', userMark: '❯', agentMark: '◆', toolMark: '⚙',
   },
   mimo: {
-    bg: 233, panel: 235, border: 239, text: 250, muted: 244,
+    bg: 233, panel: 235, border: 239, text: 250, muted: 252,
     accent: 78, tool: 37, user: 192, error: 203, ok: 78,
     brand: '●', userMark: '›', agentMark: '●', toolMark: '·',
   },
@@ -39,10 +39,47 @@ function tidy(text) {
     .trim();
 }
 
-function linkify(text) {
-  const safe = tidy(text)
-    .replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'));
-  return safe.replace(/https?:\/\/[^\s<>"'()]+/gi, (url) => {
+/** Rapikan struktur sebelum di-wrap: indentasi, code fence, bullet. */
+function prepare(text, maxIndent) {
+  return tidy(text)
+    .replace(/^ {5,}/gm, ' '.repeat(maxIndent))
+    .replace(/```[a-z0-9+_-]*\n([\s\S]*?)```/gi, (_, code) =>
+      String(code).replace(/\n$/, '').split('\n').map((l) => '│ ' + l).join('\n'))
+    .replace(/^\s*[-*+]\s+/gm, '• ')
+    .replace(/^#{1,6}\s+/gm, '');
+}
+
+/** Wrap sendiri (break_long_words=false) supaya blessed tidak memotong paksa. */
+function wrapText(text, width) {
+  const w = Math.max(8, width);
+  const out = [];
+  for (const para of String(text == null ? '' : text).split('\n')) {
+    if (!para) { out.push(''); continue; }
+    let line = '';
+    for (const original of para.split(/\s+/)) {
+      let word = original;
+      while (word.length > w) {
+        if (line) { out.push(line); line = ''; }
+        out.push(word.slice(0, w));
+        word = word.slice(w);
+      }
+      if (!word) continue;
+      if (!line) line = word;
+      else if (line.length + 1 + word.length <= w) line += ' ' + word;
+      else { out.push(line); line = word; }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+function linkify(line) {
+  let out = String(line == null ? '' : line)
+    .replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'))
+    .replace(/\*\*([^*]+)\*\*/g, '{bold}$1{/bold}')
+    .replace(/`([^`]+)`/g, '{cyan-fg}$1{/cyan-fg}');
+  if (out.startsWith('│ ')) out = '{cyan-fg}' + out + '{/cyan-fg}';
+  return out.replace(/https?:\/\/[^\s<>"'()]+/gi, (url) => {
     const clean = url.replace(/[.,;:!?]+$/, '');
     const tail = url.slice(clean.length);
     return `{underline}{cyan-fg}${clean}{/cyan-fg}{/underline}${tail}`;
@@ -84,18 +121,21 @@ function start(opts) {
   const log = blessed.box({
     top: 1, left: 0, width: '100%', height: '100%-5',
     label: ' PERCAKAPAN ', border: { type: 'round' },
-    tags: true, wrap: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
+    tags: true, wrap: false, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
     padding: { left: 1, right: 1 },
-    scrollbar: { ch: ' ', style: { bg: palette.border } },
-    style: { fg: palette.text, bg: palette.bg, border: { fg: palette.border }, label: { fg: palette.accent, bold: true } },
+    scrollbar: {
+      ch: '█', track: { ch: '·' },
+      style: { fg: palette.accent, bg: palette.bg },
+    },
+    style: { fg: palette.text, bg: palette.bg, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },
   });
   const status = blessed.box({
     bottom: 3, left: 0, width: '100%', height: 1,
-    style: { fg: palette.muted, bg: palette.bg },
+    style: { fg: palette.text, bg: palette.bg },
   });
   const input = blessed.textbox({
     bottom: 0, left: 0, width: '100%', height: 3,
-    label: ' ❯ pesan ', border: { type: 'round' }, inputOnFocus: true,
+    label: ' ❯ pesan (Enter kirim · /help perintah) ', border: { type: 'round' }, inputOnFocus: true,
     style: { fg: palette.text, bg: palette.panel, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },
   });
 
@@ -167,6 +207,12 @@ function start(opts) {
   let messages = null;
   let busy = false;
   let sessionState = 'cek...';
+  let statusExtra = '';
+  let latency = '-';
+  let spinTimer = null;
+  let spinFrame = 0;
+  const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  const COMMANDS = HELP.map((h) => h.trim().split(/\s+/)[0]).filter((c) => c && c.startsWith('/'));
   const pending = [];
   const entries = [];
 
@@ -215,14 +261,17 @@ function start(opts) {
     theme = name;
     palette = THEMES[name];
     header.style.fg = palette.text; header.style.bg = palette.panel;
-    log.style.fg = palette.text; log.style.bg = palette.bg; log.style.border.fg = palette.border;
+    log.style.fg = palette.text; log.style.bg = palette.bg; log.style.border.fg = palette.accent;
     log.style.label.fg = palette.accent;
-    status.style.fg = palette.muted; status.style.bg = palette.bg;
+    status.style.fg = palette.text; status.style.bg = palette.bg;
     input.style.fg = palette.text; input.style.bg = palette.panel; input.style.border.fg = palette.accent;
     input.style.label.fg = palette.accent;
     notice.style.fg = palette.text; notice.style.bg = palette.panel;
     notice.style.border.fg = palette.accent; notice.style.label.fg = palette.accent;
-    log.options.scrollbar.style.bg = palette.border;
+    log.options.scrollbar.style.bg = palette.bg;
+    log.options.scrollbar.style.fg = palette.accent;
+    log.options.scrollbar.track.style.fg = palette.border;
+    log.options.scrollbar.track.style.bg = palette.bg;
     drawHeader();
     renderLog();
     return true;
@@ -235,24 +284,56 @@ function start(opts) {
   }
 
   function drawStatus(extra) {
-    const mark = busy ? '◐' : '✓';
-    status.setContent(` ${mark} ${providerLabel()}  ${'\u2502'}  sesi: ${sessionState}  ${'\u2502'}  tema: ${theme}  ${'\u2502'}  ${extra || 'Enter kirim · /help bantuan · Ctrl+C keluar'}`);
+    if (extra !== undefined) statusExtra = extra;
+    const spin = busy ? `${SPIN[spinFrame]} berpikir...` : '✓ siap';
+    status.setContent(` ${spin}  ${'\u2502'}  sesi: ${sessionState}  ${'\u2502'}  tema: ${theme}  ${'\u2502'}  respons: ${latency}  ${'\u2502'}  ${statusExtra}`);
     screen.render();
   }
 
+  function setBusy(v) {
+    busy = v;
+    if (v) {
+      spinFrame = 0;
+      spinTimer = setInterval(() => {
+        spinFrame = (spinFrame + 1) % SPIN.length;
+        drawStatus();
+      }, 110);
+    } else if (spinTimer) {
+      clearInterval(spinTimer);
+      spinTimer = null;
+    }
+    drawStatus();
+  }
+
   function renderLog() {
-    log.setContent(entries.map((e) => {
+    const cols = screen.cols || log.width || 80;
+    const inner = Math.max(20, cols - 5);
+    const maxIndent = cols < 60 ? 2 : 4;
+    const pad = cols < 60 ? 6 : 8;
+    const out = [];
+    for (const e of entries) {
       const mark = e.role === 'user' ? palette.userMark
         : e.role === 'agent' ? palette.agentMark
           : e.role === 'tool' ? palette.toolMark : '·';
       const label = e.role === 'user' ? 'ANDA'
         : e.role === 'agent' ? 'HAFITRI'
           : e.role === 'tool' ? 'TOOL' : '';
-      if (e.role === 'plain') return linkify(e.text);
-      const head = label ? `${mark} ${label.padEnd(8)} ` : `${mark} `;
-      const lines = linkify(e.text).split('\n');
-      return head + lines.join('\n' + ' '.repeat(head.length));
-    }).join('\n'));
+      const body = prepare(e.text, maxIndent);
+      if (e.role === 'plain') {
+        for (const line of wrapText(body, inner)) out.push(linkify(line));
+        continue;
+      }
+      const head = label ? `${mark} ${label.padEnd(pad)} ` : `${mark} `;
+      if (e.role === 'agent') out.push('─'.repeat(inner));
+      const lines = wrapText(body, Math.max(8, inner - head.length));
+      lines.forEach((line, i) => {
+        const pretty = i === 0 && e.role === 'agent' && lines.length > 1
+          && line.length < 60 && !/[.!?:]$/.test(line);
+        const text = pretty ? `{bold}{cyan-fg}${linkify(line)}{/cyan-fg}{/bold}` : linkify(line);
+        out.push((i === 0 ? head : ' '.repeat(head.length)) + text);
+      });
+    }
+    log.setContent(out.join('\n'));
     log.scroll(1000);
     screen.render();
   }
@@ -386,7 +467,8 @@ function start(opts) {
     if (!messages) messages = newSession(line);
     else messages.push({ role: 'user', content: line });
 
-    busy = true;
+    const started = Date.now();
+    setBusy(true);
     drawStatus('memproses...');
     try {
       const answer = await step(messages, opts, (ev) => {
@@ -395,14 +477,15 @@ function start(opts) {
         append('tool', lines.slice(0, 10).join('\n'));
         if (lines.length > 10) append('tool', `... (${lines.length - 10} baris lagi)`);
       });
+      latency = ((Date.now() - started) / 1000).toFixed(1) + 's';
       append('agent', answer);
     } catch (e) {
       append('error', 'ERROR: ' + (e && e.message ? e.message : String(e)));
     } finally {
-      busy = false;
+      setBusy(false);
       store.save(store.activeId(), messages);
       focusInput();
-      drawStatus(pending.length ? `${pending.length} prompt menunggu` : 'siap');
+      drawStatus(pending.length ? `${pending.length} prompt menunggu` : '');
       if (pending.length) setImmediate(() => handle(pending.shift()));
     }
   }
@@ -427,6 +510,24 @@ function start(opts) {
       else if (key.name === 'escape') closePicker();
       else return;
       key.name = '';
+      screen.render();
+      return;
+    }
+    if (key.name === 'tab') {
+      key.name = '';
+      const v = input.getValue() || '';
+      if (v.startsWith('/')) {
+        const parts = v.slice(1).split(/\s+/);
+        if (parts.length === 1 && parts[0]) {
+          const matches = COMMANDS.filter((c) => c.startsWith('/' + parts[0]));
+          if (matches.length === 1) input.setValue(matches[0] + ' ');
+          else if (matches.length > 1) {
+            let pre = matches[0];
+            for (const c of matches) while (!c.startsWith(pre)) pre = pre.slice(0, -1);
+            input.setValue(pre);
+          }
+        } else if (!parts[0]) input.setValue('/');
+      }
       screen.render();
       return;
     }

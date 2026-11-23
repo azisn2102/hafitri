@@ -120,7 +120,9 @@ async function start() {
   // 1. Xvfb (adopsi display yang sudah ada bila tersedia)
   const displayNo = String(cfg.display).replace(/^:/, '').split('.')[0];
   const displaySocket = `/tmp/.X11-unix/X${displayNo}`;
-  if (!fs.existsSync(displaySocket) && !readPid('xvfb')) {
+  if (!readPid('xvfb')) {
+    // Socket lama bisa tertinggal setelah restart server; hapus sebelum start Xvfb baru.
+    try { fs.unlinkSync(displaySocket); } catch { /* tidak ada */ }
     spawnDetached('xvfb', 'Xvfb', [cfg.display, '-screen', '0', '1280x800x24', '-nolisten', 'tcp']);
     await sleep(700);
   }

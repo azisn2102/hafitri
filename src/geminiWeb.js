@@ -11,6 +11,13 @@ let queue = Promise.resolve();
 
 // Di akun ini opsi cepat bernama "Bantuan sehari-hari/Hydrogen" (sering macet),
 // jadi "flash" dipetakan ke "Otomatis" yang otomatis memilih model cepat.
+const GEMINI_SYSTEM = `Kamu adalah hafitri, agent CLI lokal. Kamu BUKAN sekadar model bahasa dan BUKAN asisten obrolan biasa.
+Kamu punya akses NYATA ke tools ini: shell(command,cwd,timeout), read_file(path), write_file(path,content), list_dir(path), grep(pattern,path), web_fetch(url), web_search(query), browser(action,...).
+Bila user meminta melakukan sesuatu — menjalankan perintah, cek versi, install/update, buka web, baca/tulis file — WAJIB balas HANYA satu baris:
+TOOL_CALL: {"name":"shell","arguments":{"command":"perintah di sini"}}
+(ganti nama tool sesuai kebutuhan). Jangan pernah berkata "tool tidak tersedia", "saya hanya model bahasa", atau memberi instruksi manual sebagai ganti aksi.
+Bila sudah selesai atau hanya menjawab pertanyaan, awali dengan FINAL: lalu jawaban singkat. Jangan menulis apapun di luar format FINAL:/TOOL_CALL:.`;
+
 const MODEL_KEYS = {
   auto: ['Otomatis', 'Automatic'],
   flash: ['Otomatis', 'Automatic', 'Flash'],
@@ -78,9 +85,7 @@ async function ensurePage() {
 
 function buildPrompt(messages, fresh, tools) {
   const out = [];
-  if (sentCount === 0 && messages[0] && messages[0].role === 'system') {
-    out.push(messages[0].content);
-  }
+  if (sentCount === 0) out.push(GEMINI_SYSTEM);
   for (const m of fresh) {
     if (m.role === 'user') {
       out.push('PESAN USER:\n' + m.content);
@@ -101,6 +106,7 @@ function buildPrompt(messages, fresh, tools) {
   out.push([
     'ATURAN FORMAT JAWABAN (wajib):',
     '- Kalau sudah selesai, awali dengan FINAL: lalu jawabanmu.',
+    '- Kamu MEMPUNYAI tool di atas dan WAJIB memakainya untuk perintah shell, file, web, atau browser. Jangan pernah menjawab "saya hanya model bahasa" / "saya tidak bisa menjalankan perintah".',
     '- Kalau perlu menjalankan tool, balas HANYA baris ini:',
     'TOOL_CALL: {"name":"nama_tool","arguments":{...}}',
     '- Jangan menulis penjelasan di luar format tersebut.',
@@ -186,8 +192,16 @@ async function doChat(messages, tools) {
   if (!fresh.length) return { role: 'assistant', content: '(tidak ada pesan baru)' };
   const prompt = buildPrompt(messages, fresh, tools);
   await sendPrompt(prompt);
-  const answer = await waitResponse();
-  return parseReply(answer);
+  let msg = parseReply(await waitResponse());
+
+  // Gemini web kadang tetap menjawab "saya hanya model bahasa". Koreksi sekali.
+  const ask = fresh.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
+  const wantsAction = /\b(jalankan|bantu|update|install|cek|buka|tulis|hapus|apt|npm|git|curl|ls)\b/i.test(ask);
+  if (!msg.tool_calls && wantsAction) {
+    await sendPrompt('Kamu belum memanggil tool. Balas HANYA satu baris TOOL_CALL untuk tugas di atas, misalnya: TOOL_CALL: {"name":"shell","arguments":{"command":"node -v"}}');
+    msg = parseReply(await waitResponse());
+  }
+  return msg;
 }
 
 /** Satu permintaan aktif agar UI Gemini tidak tabrakan. */
