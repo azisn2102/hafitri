@@ -158,6 +158,51 @@ async function sendPrompt(text) {
   if (!sent) throw new Error('Tombol Kirim pesan Gemini tidak ditemukan');
 }
 
+/** Nyalakan/matikan menu "+" → "Buat gambar" di Gemini web. */
+async function setImageMode(on) {
+  const plusExpr = `(() => {
+    const b = [...document.querySelectorAll('button')].find(e => /Upload & alat|Add files & tools/i.test(e.getAttribute('aria-label') || ''));
+    return b ? b.getAttribute('aria-expanded') : null;
+  })()`;
+  const clickPlus = `(() => {
+    const b = [...document.querySelectorAll('button')].find(e => /Upload & alat|Add files & tools/i.test(e.getAttribute('aria-label') || ''));
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`;
+  const checkExpr = `(() => {
+    const i = [...document.querySelectorAll('gem-menu-item[role="menuitemcheckbox"]')]
+      .find(e => /Buat gambar|Create images/i.test((e.innerText || '').trim()));
+    return i ? i.getAttribute('aria-checked') : null;
+  })()`;
+  const toggleExpr = `(() => {
+    const i = [...document.querySelectorAll('gem-menu-item[role="menuitemcheckbox"]')]
+      .find(e => /Buat gambar|Create images/i.test((e.innerText || '').trim()));
+    if (!i) return false;
+    i.click();
+    return true;
+  })()`;
+
+  let expanded = await evaluate(conn, plusExpr);
+  if (expanded !== 'true') {
+    if (!await evaluate(conn, clickPlus)) { progress('tombol Upload & alat tidak ditemukan'); return false; }
+    await sleep(800);
+    expanded = await evaluate(conn, plusExpr);
+  }
+  const checked = await evaluate(conn, checkExpr);
+  if (checked === null) { progress('menu Buat gambar tidak ditemukan'); return false; }
+  if ((checked === 'true') !== on) {
+    await evaluate(conn, toggleExpr);
+    await sleep(500);
+  }
+  // Tutup menu kalau masih terbuka.
+  if ((await evaluate(conn, plusExpr)) === 'true') {
+    await evaluate(conn, clickPlus);
+    await sleep(300);
+  }
+  return true;
+}
+
 function clean(text) {
   return text
     .replace(/Gemini adalah AI dan dapat membuat kesalahan\.?/i, '')
@@ -301,9 +346,10 @@ async function doChat(messages, tools) {
   const prompt = buildPrompt(messages, fresh, tools);
   const allowedNames = (tools || []).map((t) => t.function && t.function.name).filter(Boolean).join(', ');
   const ask = fresh.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
+  const wantsImage = /\b(gambar|foto|ilustrasi|image|gambarkan|lukis)\b/i.test(ask);
+  await setImageMode(wantsImage);
   await sendPrompt(prompt);
 
-  const wantsImage = /\b(gambar|foto|ilustrasi|image|gambarkan|lukis)\b/i.test(ask);
   async function materialize(text) {
     if (!text.startsWith('IMAGE_BLOB:')) return { answer: text, ready: false };
     progress('gambar terdeteksi — menyimpan...');
@@ -351,6 +397,7 @@ async function doChat(messages, tools) {
     await sendPrompt(`${note}\nBalas HANYA satu baris: TOOL_CALL: {"name":"nama_tool","arguments":{...}}`);
     msg = parseReply(await waitResponse(45000), tools);
   }
+  if (wantsImage) await setImageMode(false); // kembalikan mode teks untuk prompt berikutnya
   if (msg.invalidTool) {
     msg = {
       role: 'assistant',
