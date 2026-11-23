@@ -27,6 +27,7 @@ const cfg = {
   provider: process.env.AI_PROVIDER || (process.env.AI_API_KEY ? 'api' : 'gemini-web'),
   geminiModel: process.env.GEMINI_MODEL || 'auto',
   geminiUrl: process.env.GEMINI_URL || 'https://gemini.google.com/app',
+  chatgptUrl: process.env.CHATGPT_URL || 'https://chatgpt.com/',
   maxSteps: parseInt(process.env.MAX_STEPS || '24', 10) || 24,
   browserBin: process.env.BROWSER_BIN || '',
   display: process.env.BROWSER_DISPLAY || ':99',

@@ -59,7 +59,11 @@ dari prompt (mis. "simpan gambar di /sdcard/Pictures/"), atau dari `HAFITRI_IMAG
 default `downloads/`. Tool bawaan Gemini seperti `google:image_gen` ditolak — hanya tool yang
 terdaftar yang boleh dipanggil.
 
-Paksa provider lewat flag: `hafitri --gemini "tugas"` atau `hafitri --api "tugas"`.
+Selain Gemini, tersedia **ChatGPT web** (`chatgpt-web`) — juga tanpa API key. Pertama kali:
+`hafitri --chatgpt-login` (membuka chatgpt.com di noVNC), login manual, lalu
+`hafitri --chatgpt "tugas"`. Di TUI: `/provider chatgpt-web` dan `/login chatgpt`.
+
+Paksa provider lewat flag: `hafitri --gemini "tugas"`, `hafitri --chatgpt "tugas"`, atau `hafitri --api "tugas"`.
 Untuk provider `api`, wizard isi key muncul saat first run (tersimpan di `.env`, chmod 600).
 API yang didukung: semua endpoint `/chat/completions` OpenAI-compatible (OpenRouter, OpenAI, Groq, dll.).
 

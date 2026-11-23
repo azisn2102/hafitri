@@ -6,6 +6,7 @@ const cfg = require('./config');
 const { newSession, step } = require('./loop');
 const sess = require('./browser');
 const geminiWeb = require('./geminiWeb');
+const chatgptWeb = require('./chatgptWeb');
 const store = require('./sessionStore');
 
 const THEMES = {
@@ -96,12 +97,14 @@ const HELP = [
   '/clear             bersihkan layar (riwayat tetap tersimpan)',
   '/history           info riwayat tersimpan',
   '/login             start sesi noVNC + URL login',
+  '/login chatgpt     buka chatgpt.com di noVNC untuk login',
   '/session start     start browser + noVNC',
   '/session stop      matikan sesi browser',
   '/session status    cek status sesi',
   '/session url       URL noVNC',
   '/model <nama>      auto|flash|hydrogen|pro (Gemini) atau nama model API',
   '/reasoning <level> rendah|menengah|tinggi|off (khusus Hydrogen)',
+  '/provider <nama>  gemini-web | chatgpt-web | api',
   '/yolo [on|off]     izinkan perintah berisiko',
   '/steps N           batas langkah tool',
   '/quit              keluar',
@@ -111,6 +114,7 @@ const HELP = [
 function start(opts) {
   if (!process.stdin.isTTY) throw new Error('TUI membutuhkan terminal interaktif (TTY).');
   geminiWeb.setTui(true); // jangan tulis log progres ke stderr, nanti merusak layar
+  chatgptWeb.setTui(true);
 
   let theme = 'opencode';
   let palette = THEMES[theme];
@@ -248,7 +252,7 @@ function start(opts) {
   function providerLabel() {
     return cfg.provider === 'gemini-web'
       ? `Gemini web (${cfg.geminiModel})`
-      : `${cfg.model} @ ${cfg.baseUrl}`;
+      : cfg.provider === 'chatgpt-web' ? 'ChatGPT web' : `${cfg.model} @ ${cfg.baseUrl}`;
   }
 
   // inputOnFocus:true menambah listener keypress tiap focus() dipanggil.
@@ -415,7 +419,8 @@ function start(opts) {
         notify('sesi aktif dikosongkan — sesi lain tetap tersimpan');
         break;
       case 'login':
-        notify(await sess.start());
+        if (arg === 'chatgpt') notify(await chatgptWeb.openLogin());
+        else notify(await sess.start());
         await refreshSession();
         break;
       case 'session':
@@ -447,6 +452,16 @@ function start(opts) {
           notify('model = ' + arg);
         }
         drawHeader();
+        break;
+      case 'provider':
+        if (!['gemini-web', 'chatgpt-web', 'api'].includes(arg)) notify('pakai: /provider gemini-web|chatgpt-web|api');
+        else {
+          cfg.provider = arg;
+          geminiWeb.reset();
+          chatgptWeb.reset();
+          notify(arg === 'chatgpt-web' ? 'provider = chatgpt-web — jalankan /login chatgpt bila belum login' : `provider = ${arg}`);
+          drawHeader();
+        }
         break;
       case 'reasoning':
         if (cfg.provider !== 'gemini-web') notify('/reasoning hanya untuk Gemini web');

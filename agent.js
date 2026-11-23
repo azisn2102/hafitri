@@ -8,6 +8,7 @@ const { newSession, step } = require('./src/loop');
 const { TOOLS } = require('./src/tools');
 const sess = require('./src/browser');
 const geminiWeb = require('./src/geminiWeb');
+const chatgptWeb = require('./src/chatgptWeb');
 const tui = require('./src/tui');
 const store = require('./src/sessionStore');
 
@@ -25,6 +26,8 @@ function usage() {
 Pemakaian:
   hafitri "tugas"                 jalankan sekali (provider dari .env)
   hafitri --gemini "tugas"        pakai Gemini web (sesi login, tanpa API key)
+  hafitri --chatgpt "tugas"       pakai ChatGPT web (sesi login, tanpa API key)
+  hafitri --chatgpt-login         buka ChatGPT di noVNC untuk login manual
   hafitri --api "tugas"           pakai API OpenAI-compatible (butuh AI_API_KEY)
   hafitri                         TUI full-screen (default di terminal)
   hafitri --new                   mulai sesi baru (hapus riwayat lama)
@@ -33,7 +36,7 @@ Pemakaian:
   hafitri --session               REPL + langsung start sesi noVNC
   hafitri --steps 40 "..."        batasi langkah tool
 
-Opsi: --gemini, --api, --new, --tui, --plain, --login, --yolo (perintah berisiko), --help
+Opsi: --gemini, --chatgpt, --chatgpt-login, --api, --new, --tui, --plain, --login, --yolo, --help
 REPL: /help /tools /reset /login /session start|stop|status|url /yolo /steps /model /quit`);
 }
 
@@ -43,8 +46,9 @@ function ask(rl, question) {
 
 async function ensureConfig(opts) {
   if (opts.gemini) cfg.provider = 'gemini-web';
+  if (opts.chatgpt) cfg.provider = 'chatgpt-web';
   if (opts.api) cfg.provider = 'api';
-  if (cfg.provider === 'gemini-web') return true;
+  if (cfg.provider === 'gemini-web' || cfg.provider === 'chatgpt-web') return true;
   if (cfg.apiKey) return true;
   if (!process.stdin.isTTY) {
     console.error(c.yellow('AI_API_KEY belum ada. Pakai --gemini (sesi login) atau isi AI_API_KEY di /home/ai-agent/.env.'));
@@ -106,7 +110,7 @@ async function repl(opts) {
   let messages = null;
   const label = cfg.provider === 'gemini-web'
     ? `Gemini web (${cfg.geminiModel})`
-    : `${cfg.model} @ ${cfg.baseUrl}`;
+    : cfg.provider === 'chatgpt-web' ? 'ChatGPT web' : `${cfg.model} @ ${cfg.baseUrl}`;
   console.log(c.bold(`hafitri v0.1`) + c.dim(` | model: ${label} | /help`));
 
   rl.on('SIGINT', () => {
@@ -123,7 +127,7 @@ async function repl(opts) {
       const [cmd, ...rest] = line.slice(1).split(/\s+/);
       const arg = rest.join(' ');
       try {
-        if (cmd === 'quit' || cmd === 'exit') { geminiWeb.close(); rl.close(); break; }
+        if (cmd === 'quit' || cmd === 'exit') { geminiWeb.close(); chatgptWeb.close(); rl.close(); break; }
         if (cmd === 'help') {
           console.log('/help              bantuan ini\n' +
             '/tools             daftar tool\n' +
@@ -186,12 +190,14 @@ async function repl(opts) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false, gemini: false, api: false, tui: false, plain: false, fresh: false };
+  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false, gemini: false, chatgpt: false, chatgptLogin: false, api: false, tui: false, plain: false, fresh: false };
   const parts = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--yolo') opts.yolo = true;
     else if (a === '--gemini') opts.gemini = true;
+    else if (a === '--chatgpt') opts.chatgpt = true;
+    else if (a === '--chatgpt-login') opts.chatgptLogin = true;
     else if (a === '--api') opts.api = true;
     else if (a === '--session') opts.session = true;
     else if (a === '--login') opts.login = true;
@@ -203,6 +209,11 @@ async function main() {
     else parts.push(a);
   }
   if (opts.login) { console.log(await loginInfo()); return; }
+  if (opts.chatgptLogin) {
+    const url = await chatgptWeb.openLogin();
+    console.log(`ChatGPT dibuka: ${cfg.chatgptUrl}\nnoVNC: ${url}\nLogin manual di jendela Chromium, lalu jalankan: hafitri --chatgpt "tugas"`);
+    return;
+  }
   if (!(await ensureConfig(opts))) return;
   if (opts.fresh) {
     const id = store.create();
@@ -215,6 +226,7 @@ async function main() {
   if (task) {
     await runTask(newSession(task), opts);
     geminiWeb.close(); // lepas WebSocket CDP, kalau tidak proses menggantung setelah selesai
+    chatgptWeb.close();
   } else if (opts.tui || (!opts.plain && process.stdin.isTTY)) {
     tui.start(opts);
   } else {
@@ -224,6 +236,7 @@ async function main() {
 
 main().catch((e) => {
   geminiWeb.close(); // pastikan WebSocket CDP tidak menahan proses saat error
+  chatgptWeb.close();
   console.error(c.yellow('FATAL: ' + (e && e.stack ? e.stack : e)));
   process.exitCode = 1;
 });
