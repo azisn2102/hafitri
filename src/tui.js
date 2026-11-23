@@ -7,6 +7,7 @@ const { newSession, step } = require('./loop');
 const sess = require('./browser');
 const geminiWeb = require('./geminiWeb');
 const chatgptWeb = require('./chatgptWeb');
+const claudeWeb = require('./claudeWeb');
 const store = require('./sessionStore');
 
 const THEMES = {
@@ -115,6 +116,7 @@ function start(opts) {
   if (!process.stdin.isTTY) throw new Error('TUI membutuhkan terminal interaktif (TTY).');
   geminiWeb.setTui(true); // jangan tulis log progres ke stderr, nanti merusak layar
   chatgptWeb.setTui(true);
+  claudeWeb.setTui(true);
 
   let theme = 'opencode';
   let palette = THEMES[theme];
@@ -225,6 +227,7 @@ function start(opts) {
   const PROVIDERS = [
     { id: 'gemini-web', label: 'Gemini web — gratis, tool lengkap, generate gambar' },
     { id: 'chatgpt-web', label: 'ChatGPT web — gratis, shell + generate gambar' },
+    { id: 'claude-web', label: 'Claude web — gratis, shell' },
     { id: 'api', label: 'API OpenAI-compatible — butuh AI_API_KEY' },
   ];
   let providerPickerActive = false;
@@ -249,8 +252,9 @@ function start(opts) {
       cfg.provider = picked.id;
       geminiWeb.reset();
       chatgptWeb.reset();
-      notify(picked.id === 'chatgpt-web'
-        ? 'provider = ChatGPT web — /login chatgpt bila belum login'
+      claudeWeb.reset();
+      notify(picked.id === 'chatgpt-web' ? 'provider = ChatGPT web — /login chatgpt bila belum login'
+        : picked.id === 'claude-web' ? 'provider = Claude web — /login claude bila belum login'
         : `provider = ${picked.id}`);
       drawHeader();
     }
@@ -298,7 +302,8 @@ function start(opts) {
   function providerLabel() {
     return cfg.provider === 'gemini-web'
       ? `Gemini web (${cfg.geminiModel})`
-      : cfg.provider === 'chatgpt-web' ? 'ChatGPT web' : `${cfg.model} @ ${cfg.baseUrl}`;
+      : cfg.provider === 'chatgpt-web' ? 'ChatGPT web'
+        : cfg.provider === 'claude-web' ? 'Claude web' : `${cfg.model} @ ${cfg.baseUrl}`;
   }
 
   // inputOnFocus:true menambah listener keypress tiap focus() dipanggil.
@@ -469,6 +474,7 @@ function start(opts) {
         break;
       case 'login':
         if (arg === 'chatgpt') notify(await chatgptWeb.openLogin());
+        else if (arg === 'claude') notify(await claudeWeb.openLogin());
         else notify(await sess.start());
         await refreshSession();
         break;
@@ -504,11 +510,12 @@ function start(opts) {
         break;
       case 'provider':
         if (!arg) showProviderPicker();
-        else if (!['gemini-web', 'chatgpt-web', 'api'].includes(arg)) notify('pakai: /provider gemini-web|chatgpt-web|api');
+        else if (!['gemini-web', 'chatgpt-web', 'claude-web', 'api'].includes(arg)) notify('pakai: /provider gemini-web|chatgpt-web|claude-web|api');
         else {
           cfg.provider = arg;
           geminiWeb.reset();
           chatgptWeb.reset();
+          claudeWeb.reset();
           notify(arg === 'chatgpt-web' ? 'provider = chatgpt-web — jalankan /login chatgpt bila belum login' : `provider = ${arg}`);
           drawHeader();
         }
