@@ -49,6 +49,11 @@ yang sudah Anda buka di noVNC — **tanpa API key**. Model dipilih lewat dropdow
 Di akun yang opsi cepatnya bernama "Hydrogen", `flash` dipetakan ke mode **Otomatis** karena
 Hydrogen sering macet; `pro` dipetakan ke "Analisis lebih dalam/Neon".
 
+Kalau Gemini menghasilkan gambar (bukan teks), hafitri menyimpannya otomatis. Path tujuan diambil
+dari prompt (mis. "simpan gambar di /sdcard/Pictures/"), atau dari `HAFITRI_IMAGE_DIR`, atau
+default `downloads/`. Tool bawaan Gemini seperti `google:image_gen` ditolak — hanya tool yang
+terdaftar yang boleh dipanggil.
+
 Paksa provider lewat flag: `hafitri --gemini "tugas"` atau `hafitri --api "tugas"`.
 Untuk provider `api`, wizard isi key muncul saat first run (tersimpan di `.env`, chmod 600).
 API yang didukung: semua endpoint `/chat/completions` OpenAI-compatible (OpenRouter, OpenAI, Groq, dll.).

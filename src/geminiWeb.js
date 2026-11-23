@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const cfg = require('./config');
 const sess = require('./browser');
 
@@ -19,11 +21,12 @@ function setTui(on) { tuiMode = !!on; }
 
 // Di akun ini opsi cepat bernama "Bantuan sehari-hari/Hydrogen" (sering macet),
 // jadi "flash" dipetakan ke "Otomatis" yang otomatis memilih model cepat.
-const GEMINI_SYSTEM = `Kamu adalah hafitri, agent CLI lokal. Kamu BUKAN sekadar model bahasa dan BUKAN asisten obrolan biasa.
-Kamu punya akses NYATA ke tools ini: shell(command,cwd,timeout), read_file(path), write_file(path,content), list_dir(path), grep(pattern,path), web_fetch(url), web_search(query), browser(action,...).
-Bila user meminta melakukan sesuatu — menjalankan perintah, cek versi, install/update, buka web, baca/tulis file — WAJIB balas HANYA satu baris:
+const GEMINI_SYSTEM = `Kamu adalah hafitri, agent CLI lokal untuk otomasi, coding, dan riset web. Bila ditanya siapa kamu, jawab persis: "Aku hafitri, agent CLI lokal yang membantu otomasi tugas, coding, dan riset web." Jangan bilang kamu asisten AI, model bahasa, atau chatbot.
+Kamu punya akses NYATA HANYA ke tools yang tercantum di daftar "TOOL YANG TERSEDIA" di bawah. Tool bawaan Gemini seperti google:image_gen, google:search, image_gen, atau namespace google:* TIDAK ada di hafitri — jangan pernah menyebut atau memanggilnya.
+Bila user meminta melakukan sesuatu — menjalankan perintah, cek versi, install/update, buka web, baca/tulis file, buat gambar — WAJIB balas HANYA satu baris JSON dengan pembungkus "arguments":
 TOOL_CALL: {"name":"shell","arguments":{"command":"perintah di sini"}}
-(ganti nama tool sesuai kebutuhan). Jangan pernah berkata "tool tidak tersedia", "saya hanya model bahasa", atau memberi instruksi manual sebagai ganti aksi.
+Contoh salah: {"name":"google:image_gen","prompt":"..."}. Contoh benar: {"name":"shell","arguments":{"command":"..."}}.
+Jangan pernah berkata "tool tidak tersedia", "saya hanya model bahasa", atau memberi instruksi manual sebagai ganti aksi. Kalau memang tidak ada tool yang bisa melakukan permintaan itu, jawab FINAL: dan jelaskan singkat bahwa hafitri belum punya tool tersebut.
 Bila sudah selesai atau hanya menjawab pertanyaan, awali dengan FINAL: lalu jawaban singkat. Jangan menulis apapun di luar format FINAL:/TOOL_CALL:.`;
 
 const MODEL_KEYS = {
@@ -156,10 +159,13 @@ function clean(text) {
   return text
     .replace(/Gemini adalah AI dan dapat membuat kesalahan\.?/i, '')
     .replace(/Gemini can make mistakes[^\n]*/i, '')
+    .replace(/Saya adalah hafitri/gi, 'Aku hafitri')
+    .replace(/Saya hafitri/gi, 'Aku hafitri')
+    .replace(/\basisten AI\b/gi, 'agent CLI lokal')
     .trim();
 }
 
-async function waitResponse(timeoutMs = 60000) {
+async function waitResponse(timeoutMs = 120000) {
   const t0 = Date.now();
   let last = '';
   let stable = 0;
@@ -167,42 +173,118 @@ async function waitResponse(timeoutMs = 60000) {
   while (Date.now() - t0 < timeoutMs) {
     await sleep(800);
     if (!warned && Date.now() - t0 > 20000) { progress('masih menunggu respons Gemini...'); warned = true; }
-    const state = await evaluate(conn, `(() => ({
-      busy: [...document.querySelectorAll('button')].some(e => /Hentikan respons|Stop response/i.test(e.getAttribute('aria-label') || '')),
-      text: (() => { const els = [...document.querySelectorAll('structured-content-container.model-response-text')]; return els.length ? els[els.length - 1].innerText.trim() : ''; })(),
-    }))()`);
-    if (state.text && state.text === last) stable++;
-    else { last = state.text; stable = 0; }
-    if (!state.busy && last && stable >= 2) return clean(last);
+    const state = await evaluate(conn, `(() => {
+      const els = [...document.querySelectorAll('structured-content-container.model-response-text')];
+      const imgs = [...document.querySelectorAll('img[alt*="buatan AI"], img[src^="blob:"]')];
+      return {
+        busy: [...document.querySelectorAll('button')].some(e => /Hentikan respons|Stop response/i.test(e.getAttribute('aria-label') || '')),
+        text: els.length ? els[els.length - 1].innerText.trim() : '',
+        image: imgs.length ? imgs[imgs.length - 1].src : '',
+      };
+    })()`);
+    const sig = state.text || state.image;
+    if (sig && sig === last) stable++;
+    else { last = sig; stable = 0; }
+    if (!state.busy && last && stable >= 2) {
+      if (!state.text && state.image) return 'IMAGE_BLOB:' + state.image;
+      return clean(state.text || last);
+    }
   }
-  throw new Error('Respons Gemini timeout setelah 60 detik. Coba lagi atau pakai /model auto.');
+  throw new Error('Respons Gemini timeout setelah 120 detik. Coba lagi atau pakai /model auto.');
 }
 
-function parseReply(text) {
-  const m = text.match(/TOOL_CALL:\s*([\s\S]*?)(?:\nFINAL:|$)/i)
+/** Ambil objek JSON pertama dari teks (abaikan teks sebelum/sesudahnya). */
+function extractJson(s) {
+  const start = s.indexOf('{');
+  if (start < 0) return '';
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return s.slice(start);
+}
+
+function parseReply(text, tools) {
+  const allowed = new Set((tools || []).map((t) => t.function && t.function.name).filter(Boolean));
+  const m = text.match(/TOOL_CALL:\s*([\s\S]*)$/i)
     || text.match(/```(?:tool|json)?\s*([\s\S]*?)```/i);
+  let parsed = null;
   if (m) {
     try {
-      const raw = m[1].trim().replace(/^```|```$/g, '').trim();
-      const obj = JSON.parse(raw);
-      if (obj && obj.name) {
-        return {
-          role: 'assistant',
-          content: null,
-          tool_calls: [{
-            id: 'gem-' + Date.now(),
-            type: 'function',
-            function: { name: obj.name, arguments: JSON.stringify(obj.arguments || {}) },
-          }],
-        };
+      const obj = JSON.parse(extractJson(m[1]));
+      if (obj && typeof obj === 'object') {
+        const name = String(obj.name || obj.tool || '').trim();
+        // Gemini sering mengirim argumen "flat" (tanpa pembungkus arguments).
+        const args = obj.arguments && typeof obj.arguments === 'object'
+          ? obj.arguments
+          : Object.fromEntries(Object.entries(obj).filter(([k]) =>
+            !['name', 'tool', 'arguments', 'end_turn'].includes(k)));
+        parsed = { name, args };
       }
-    } catch { /* bukan JSON tool call, dianggap jawaban biasa */ }
+    } catch { /* format bukan JSON; dianggap jawaban biasa */ }
   }
-  const clean = text.replace(/^FINAL:\s*/i, '').trim()
+  if (parsed && parsed.name && (!allowed.size || allowed.has(parsed.name))) {
+    return {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{
+        id: 'gem-' + Date.now(),
+        type: 'function',
+        function: { name: parsed.name, arguments: JSON.stringify(parsed.args) },
+      }],
+    };
+  }
+  const clean = text
+    .replace(/TOOL_CALL:[\s\S]*/i, '')
+    .replace(/^FINAL:\s*/i, '')
     .replace(/\bGemini\b/gi, 'hafitri')
-    .replace(/asisten AI dari Google/gi, 'agent CLI lokal milik user')
+    .replace(/Saya adalah hafitri/gi, 'Aku hafitri')
+    .replace(/Saya hafitri/gi, 'Aku hafitri')
+    .replace(/\basisten AI\b/gi, 'agent CLI lokal')
+    .replace(/agent CLI lokal dari Google/gi, 'agent CLI lokal milik user')
     .trim();
-  return { role: 'assistant', content: clean || '(kosong)' };
+  return {
+    role: 'assistant',
+    content: clean || '(kosong)',
+    invalidTool: parsed && parsed.name ? parsed.name : null,
+  };
+}
+
+/** Simpan gambar hasil Gemini lewat screenshot elemen (blob URL tidak bisa di-fetch dari CDP). */
+async function saveImage(dirOverride) {
+  await conn.send('Page.enable');
+  const rect = await evaluate(conn, `(() => {
+    const img = [...document.querySelectorAll('img[alt*="buatan AI"], img[src^="blob:"]')].pop();
+    if (!img) return null;
+    img.scrollIntoView({ block: 'center' });
+    const r = img.getBoundingClientRect();
+    return { x: Math.floor(r.x), y: Math.floor(r.y), width: Math.floor(r.width), height: Math.floor(r.height) };
+  })()`);
+  if (!rect || rect.width < 20 || rect.height < 20) throw new Error('elemen gambar tidak ditemukan');
+  await sleep(300);
+  const shot = await conn.send('Page.captureScreenshot', {
+    format: 'png',
+    clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 },
+  });
+  const dir = dirOverride || process.env.HAFITRI_IMAGE_DIR || path.join(cfg.root, 'downloads');
+  fs.mkdirSync(dir, { recursive: true });
+  // Hindari kata "Gemini" pada nama file: clean() menggantinya jadi "hafitri".
+  const file = path.join(dir, `img-${Date.now()}.png`);
+  fs.writeFileSync(file, Buffer.from(shot.data || '', 'base64'));
+  fs.chmodSync(file, 0o644);
+  return file;
 }
 
 async function doChat(messages, tools) {
@@ -211,16 +293,42 @@ async function doChat(messages, tools) {
   sentCount = messages.length;
   if (!fresh.length) return { role: 'assistant', content: '(tidak ada pesan baru)' };
   const prompt = buildPrompt(messages, fresh, tools);
-  await sendPrompt(prompt);
-  let msg = parseReply(await waitResponse());
-
-  // Gemini web kadang tetap menjawab "saya hanya model bahasa". Koreksi sekali.
+  const allowedNames = (tools || []).map((t) => t.function && t.function.name).filter(Boolean).join(', ');
   const ask = fresh.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
-  const wantsAction = /\b(jalankan|eksekusi|install|update|apt|npm|git|curl|node|ls|hapus|tulis file|buka web)\b/i.test(ask);
-  if (!msg.tool_calls && wantsAction) {
-    progress('model belum memanggil tool — koreksi sekali');
-    await sendPrompt('Kamu belum memanggil tool. Balas HANYA satu baris TOOL_CALL untuk tugas di atas, misalnya: TOOL_CALL: {"name":"shell","arguments":{"command":"node -v"}}');
-    msg = parseReply(await waitResponse(45000));
+  await sendPrompt(prompt);
+
+  let answer = await waitResponse();
+  let imageReady = false;
+  if (answer.startsWith('IMAGE_BLOB:')) {
+    progress('gambar terdeteksi — menyimpan...');
+    try {
+      const pathMatch = ask.match(/(?:simpan|save|taruh|letak)\w*\s+(?:gambar\s+)?(?:di\s+)?([^\s"']+\/[^\s"']*)/i);
+      const destDir = pathMatch && !/\.(png|jpe?g|webp)$/i.test(pathMatch[1]) ? pathMatch[1] : null;
+      const file = await saveImage(destDir);
+      answer = 'FINAL: Gambar berhasil dibuat dan disimpan di ' + file;
+      imageReady = true;
+    } catch (e) {
+      answer = 'FINAL: gambar dibuat Gemini, tapi gagal disimpan: ' + e.message;
+      imageReady = true;
+    }
+  }
+  let msg = parseReply(answer, tools);
+
+  // Koreksi sekali: tool ngarang / belum memanggil tool sama sekali.
+  const wantsAction = /\b(jalankan|eksekusi|install|update|apt|npm|git|curl|node|ls|hapus|tulis|buat|unduh|buka|cek)\b/i.test(ask);
+  if (!imageReady && (msg.invalidTool || (!msg.tool_calls && wantsAction))) {
+    const note = msg.invalidTool
+      ? `Tool "${msg.invalidTool}" TIDAK tersedia di hafitri. Jangan pakai tool bawaan Gemini / google:*. Hanya tool ini yang boleh dipanggil: ${allowedNames}.`
+      : `Kamu belum memanggil tool. Hanya tool ini yang tersedia: ${allowedNames}.`;
+    progress('tool tidak valid / belum dipanggil — koreksi sekali');
+    await sendPrompt(`${note}\nBalas HANYA satu baris: TOOL_CALL: {"name":"nama_tool","arguments":{...}}`);
+    msg = parseReply(await waitResponse(45000), tools);
+  }
+  if (msg.invalidTool) {
+    msg = {
+      role: 'assistant',
+      content: `Tool "${msg.invalidTool}" tidak tersedia di hafitri. Tool yang bisa dipakai: ${allowedNames}.`,
+    };
   }
   return msg;
 }
@@ -245,4 +353,4 @@ function close() {
   sentCount = 0;
 }
 
-module.exports = { chat, reset, setTui, close };
+module.exports = { chat, reset, setTui, close, _parseReply: parseReply };

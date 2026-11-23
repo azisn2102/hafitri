@@ -219,6 +219,7 @@ async function main() {
 }
 
 main().catch((e) => {
+  geminiWeb.close(); // pastikan WebSocket CDP tidak menahan proses saat error
   console.error(c.yellow('FATAL: ' + (e && e.stack ? e.stack : e)));
   process.exitCode = 1;
 });
