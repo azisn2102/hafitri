@@ -122,10 +122,10 @@ function start(opts) {
   const log = blessed.box({
     top: 1, left: 0, width: '100%', height: '100%-5',
     label: ' PERCAKAPAN ', border: { type: 'round' },
-    tags: true, wrap: false, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
+    tags: true, wrap: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
     padding: { left: 1, right: 1 },
     scrollbar: {
-      ch: '█', track: { ch: '·' },
+      ch: '▐', track: { ch: ' ' },
       style: { fg: palette.accent, bg: palette.bg },
     },
     style: { fg: palette.text, bg: palette.bg, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },

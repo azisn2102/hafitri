@@ -22,12 +22,12 @@ function setTui(on) { tuiMode = !!on; }
 // Di akun ini opsi cepat bernama "Bantuan sehari-hari/Hydrogen" (sering macet),
 // jadi "flash" dipetakan ke "Otomatis" yang otomatis memilih model cepat.
 const GEMINI_SYSTEM = `Kamu adalah hafitri, agent CLI lokal untuk otomasi, coding, dan riset web. Bila ditanya siapa kamu, jawab persis: "Aku hafitri, agent CLI lokal yang membantu otomasi tugas, coding, dan riset web." Jangan bilang kamu asisten AI, model bahasa, atau chatbot.
-Kamu punya akses NYATA HANYA ke tools yang tercantum di daftar "TOOL YANG TERSEDIA" di bawah. Tool bawaan Gemini seperti google:image_gen, google:search, image_gen, atau namespace google:* TIDAK ada di hafitri — jangan pernah menyebut atau memanggilnya.
-Bila user meminta melakukan sesuatu — menjalankan perintah, cek versi, install/update, buka web, baca/tulis file, buat gambar — WAJIB balas HANYA satu baris JSON dengan pembungkus "arguments":
+Untuk tugas shell, file, web, dan browser, HANYA pakai tool yang tercantum di daftar "TOOL YANG TERSEDIA". Jangan mengarang nama tool seperti google:image_gen — itu bukan tool hafitri.
+KECUALI untuk permintaan gambar/foto/ilustrasi: pakai kemampuan bawaanmu untuk membuat gambar LANGSUNG. Jangan tulis TOOL_CALL, jangan bilang "tool tidak tersedia", dan jangan memberi instruksi manual — cukup buat gambarnya. Sistem hafitri otomatis menyimpan gambar yang kamu hasilkan ke path yang diminta user.
+Bila user meminta menjalankan perintah, cek versi, install/update, buka web, atau baca/tulis file, WAJIB balas HANYA satu baris dengan pembungkus "arguments":
 TOOL_CALL: {"name":"shell","arguments":{"command":"perintah di sini"}}
-Contoh salah: {"name":"google:image_gen","prompt":"..."}. Contoh benar: {"name":"shell","arguments":{"command":"..."}}.
-Jangan pernah berkata "tool tidak tersedia", "saya hanya model bahasa", atau memberi instruksi manual sebagai ganti aksi. Kalau memang tidak ada tool yang bisa melakukan permintaan itu, jawab FINAL: dan jelaskan singkat bahwa hafitri belum punya tool tersebut.
-Bila sudah selesai atau hanya menjawab pertanyaan, awali dengan FINAL: lalu jawaban singkat. Jangan menulis apapun di luar format FINAL:/TOOL_CALL:.`;
+Contoh benar: {"name":"shell","arguments":{"command":"node -v"}}. Jangan pernah berkata "saya hanya model bahasa" atau memberi instruksi manual sebagai ganti aksi.
+Bila sudah selesai atau hanya menjawab pertanyaan, awali dengan FINAL: lalu jawaban singkat. Jangan menulis apapun di luar format FINAL:/TOOL_CALL: — kecuali untuk permintaan gambar, di mana kamu cukup membuat gambar.`;
 
 const MODEL_KEYS = {
   auto: ['Otomatis', 'Automatic'],
@@ -297,28 +297,37 @@ async function doChat(messages, tools) {
   const ask = fresh.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
   await sendPrompt(prompt);
 
-  let answer = await waitResponse();
-  let imageReady = false;
-  if (answer.startsWith('IMAGE_BLOB:')) {
+  const wantsImage = /\b(gambar|foto|ilustrasi|image|gambarkan|lukis)\b/i.test(ask);
+  async function materialize(text) {
+    if (!text.startsWith('IMAGE_BLOB:')) return { answer: text, ready: false };
     progress('gambar terdeteksi — menyimpan...');
     try {
       const pathMatch = ask.match(/(?:simpan|save|taruh|letak)\w*\s+(?:gambar\s+)?(?:di\s+)?([^\s"']+\/[^\s"']*)/i);
       const destDir = pathMatch && !/\.(png|jpe?g|webp)$/i.test(pathMatch[1]) ? pathMatch[1] : null;
       const file = await saveImage(destDir);
-      answer = 'FINAL: Gambar berhasil dibuat dan disimpan di ' + file;
-      imageReady = true;
+      return { answer: 'FINAL: Gambar berhasil dibuat dan disimpan di ' + file, ready: true };
     } catch (e) {
-      answer = 'FINAL: gambar dibuat Gemini, tapi gagal disimpan: ' + e.message;
-      imageReady = true;
+      return { answer: 'FINAL: gambar dibuat Gemini, tapi gagal disimpan: ' + e.message, ready: true };
     }
   }
+
+  let r = await materialize(await waitResponse());
+  let answer = r.answer;
+  let imageReady = r.ready;
   let msg = parseReply(answer, tools);
 
-  // Koreksi sekali: tool ngarang / belum memanggil tool sama sekali.
-  const wantsAction = /\b(jalankan|eksekusi|install|update|apt|npm|git|curl|node|ls|hapus|tulis|buat|unduh|buka|cek)\b/i.test(ask);
-  if (!imageReady && (msg.invalidTool || (!msg.tool_calls && wantsAction))) {
+  const wantsAction = /\b(jalankan|eksekusi|install|update|apt|npm|git|curl|node|ls|hapus|tulis|unduh|buka|cek)\b/i.test(ask);
+  if (!imageReady && wantsImage) {
+    // Jangan koreksi pakai TOOL_CALL — Gemini memang perlu pakai kemampuan gambar bawannya.
+    progress('belum ada gambar — minta generate ulang');
+    await sendPrompt('Buat gambarnya sekarang dengan kemampuan bawaanmu. Jangan tulis TOOL_CALL dan jangan bilang tidak bisa.');
+    r = await materialize(await waitResponse(45000));
+    answer = r.answer;
+    imageReady = r.ready;
+    if (!imageReady) msg = parseReply(answer, tools);
+  } else if (!imageReady && (msg.invalidTool || (!msg.tool_calls && wantsAction))) {
     const note = msg.invalidTool
-      ? `Tool "${msg.invalidTool}" TIDAK tersedia di hafitri. Jangan pakai tool bawaan Gemini / google:*. Hanya tool ini yang boleh dipanggil: ${allowedNames}.`
+      ? `Tool "${msg.invalidTool}" TIDAK tersedia di hafitri. Hanya tool ini yang boleh dipanggil: ${allowedNames}.`
       : `Kamu belum memanggil tool. Hanya tool ini yang tersedia: ${allowedNames}.`;
     progress('tool tidak valid / belum dipanggil — koreksi sekali');
     await sendPrompt(`${note}\nBalas HANYA satu baris: TOOL_CALL: {"name":"nama_tool","arguments":{...}}`);
