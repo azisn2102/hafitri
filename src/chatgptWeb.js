@@ -198,11 +198,14 @@ function lastImageSrc() {
   })()`);
 }
 
-function countReplies() {
-  return evaluate(`(() => document.querySelectorAll('[data-message-author-role="assistant"], [class*="DilResponseRoot"]').length)()`);
+function lastReplyText() {
+  return evaluate(`(() => {
+    const els = [...document.querySelectorAll('[data-message-author-role="assistant"], [class*="DilResponseRoot"]')];
+    return els.length ? els[els.length - 1].innerText.trim() : '';
+  })()`);
 }
 
-async function waitResponse(timeoutMs = 120000, beforeCount = 0, beforeImage = '') {
+async function waitResponse(timeoutMs = 120000, beforeText = '', beforeImage = '') {
   const t0 = Date.now();
   let last = '', stable = 0, warned = false;
   while (Date.now() - t0 < timeoutMs) {
@@ -211,7 +214,6 @@ async function waitResponse(timeoutMs = 120000, beforeCount = 0, beforeImage = '
     const state = await evaluate(`(() => {
       const els = [...document.querySelectorAll('[data-message-author-role="assistant"], [class*="DilResponseRoot"]')];
       return {
-        count: els.length,
         busy: !!document.querySelector('button[data-testid="stop-button"], button[aria-label*="Stop generating"]'),
         text: els.length ? els[els.length - 1].innerText.trim() : '',
         image: (() => {
@@ -223,7 +225,11 @@ async function waitResponse(timeoutMs = 120000, beforeCount = 0, beforeImage = '
     const sig = (state && (state.image || state.text)) || '';
     if (sig && sig === last) stable++;
     else { last = sig; stable = 0; }
-    if (state && state.count > beforeCount && !state.busy && last && stable >= 3) {
+    const changed = state && (
+      (state.text && state.text !== beforeText) ||
+      (state.image && state.image !== beforeImage)
+    );
+    if (state && changed && !state.busy && last && stable >= 3) {
       if (state.image && state.image !== beforeImage) return 'IMAGE_BLOB:' + state.image;
       return state.text || last;
     }
@@ -241,10 +247,10 @@ async function doChat(messages, tools) {
   const wantsImage = /\b(gambar|foto|ilustrasi|image|gambarkan|lukis)\b/i.test(ask);
   if (wantsImage) await setImageMode();
   const prompt = wantsImage ? ask : buildPrompt(messages, fresh, tools);
-  const before1 = await countReplies();
+  const beforeText1 = await lastReplyText();
   const beforeImage1 = await lastImageSrc();
   await sendPrompt(prompt);
-  let reply = await waitResponse(120000, before1, beforeImage1);
+  let reply = await waitResponse(120000, beforeText1, beforeImage1);
   if (reply.startsWith('IMAGE_BLOB:')) {
     progress('gambar terdeteksi — menyimpan...');
     try {
@@ -264,10 +270,12 @@ async function doChat(messages, tools) {
       ? `Tool "${msg.invalidTool}" tidak tersedia. Hanya tool ini: ${allowedNames}.`
       : `Kamu adalah hafitri dan tool ${allowedNames} tersedia. Jangan bilang tool tidak tersedia dan jangan memberi instruksi manual.`;
     progress('tool tidak valid / belum dipanggil — koreksi sekali');
-    const before2 = await countReplies();
+    const beforeText2 = await lastReplyText();
     const beforeImage2 = await lastImageSrc();
-    await sendPrompt(`${note}\nTulis HANYA baris: PERINTAH: node -v`);
-    msg = parseReply(await waitResponse(45000, before2, beforeImage2), tools);
+    const guess = ask.match(/(?:(?:jalankan|eksekusi|run|bantu|tolong)\s+(?:perintah\s+)?)?((?:apt|npm|git|curl|node|ls|echo|pwd|uname|df|free|uptime)\b[^\n.!?]*)/i);
+    const wanted = guess ? guess[1].trim() : 'node -v';
+    await sendPrompt(`${note}\nTugas user: ${ask}\nTulis HANYA baris: PERINTAH: ${wanted}`);
+    msg = parseReply(await waitResponse(45000, beforeText2, beforeImage2), tools);
   }
   if (msg.invalidTool) msg = { role: 'assistant', content: `Tool "${msg.invalidTool}" tidak tersedia. Tool yang bisa dipakai: ${allowedNames}.` };
   return msg;
