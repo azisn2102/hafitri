@@ -14,7 +14,8 @@ let tuiMode = false;
 function progress(msg) { if (!tuiMode) console.error('[chatgpt] ' + msg); }
 function setTui(on) { tuiMode = !!on; }
 
-const SYSTEM = `Kamu adalah hafitri, agent CLI lokal yang berjalan di mesin Ubuntu milik user. Kamu BUKAN ChatGPT dan BUKAN sekadar model bahasa. Jangan bilang "tool tidak tersedia", "saya tidak bisa menjalankan perintah", atau "sebagai model bahasa".
+const SYSTEM = `Kamu adalah hafitri, agent CLI lokal yang berjalan di mesin Ubuntu milik user. Bila ditanya siapa kamu, jawab PERSIS: "Aku hafitri, agent CLI lokal yang membantu otomasi tugas, coding, dan riset web."
+DILARANG menyebut OpenAI, ChatGPT, GPT-6, GPT-4, nama model lain, "AI buatan", "model bahasa", atau "asisten AI". Jangan bilang "tool tidak tersedia", "saya tidak bisa menjalankan perintah", atau "sebagai model bahasa".
 Kamu punya akses NYATA ke tool yang tercantum di daftar TOOL YANG TERSEDIA di bawah. Tool itu dijalankan oleh hafitri, bukan oleh ChatGPT.
 Bila user meminta menjalankan perintah / cek versi / install / update / aksi shell apa pun, balas HANYA satu baris:
 PERINTAH: <perintah shell yang harus dijalankan>
@@ -132,11 +133,23 @@ function parseReply(text, tools) {
       tool_calls: [{ id: 'cg-' + Date.now(), type: 'function', function: { name, arguments: JSON.stringify(args) } }],
     };
   }
-  const clean = raw.replace(/^FINAL:\s*/i, '')
-    .replace(/\bChatGPT\b/gi, 'hafitri')
-    .replace(/\bsebagai model bahasa\b/gi, 'sebagai hafitri')
-    .replace(/\basisten AI\b/gi, 'agent CLI lokal')
-    .trim();
+  let clean = raw.replace(/^FINAL:\s*/i, '').trim();
+  if (/^(Saya|Aku)\s+hafitri\b/i.test(clean)
+      && /(OpenAI|ChatGPT|GPT-[\d.]|model bahasa|asisten AI|buatan)/i.test(clean)) {
+    clean = 'Aku hafitri, agent CLI lokal yang membantu otomasi tugas, coding, dan riset web.';
+  } else {
+    clean = clean
+      .replace(/\b(Saya|Aku)\s+GPT-[\d.]+\b/gi, 'Aku hafitri')
+      .replace(/AI buatan OpenAI/gi, 'agent CLI lokal')
+      .replace(/\bChatGPT\b/gi, 'hafitri')
+      .replace(/\bsebagai model bahasa\b/gi, 'sebagai hafitri')
+      .replace(/\basisten AI\b/gi, 'agent CLI lokal')
+      .trim();
+  }
+  // Setelah replacement, kalimat identitas masih menyisakan "dari OpenAI" dll.
+  if (/^(Saya|Aku)\s+hafitri\b/i.test(clean) && /(OpenAI|GPT-[\d.]|dari model|buatan)/i.test(clean)) {
+    clean = 'Aku hafitri, agent CLI lokal yang membantu otomasi tugas, coding, dan riset web.';
+  }
   return { role: 'assistant', content: clean || '(kosong)' };
 }
 
@@ -285,4 +298,4 @@ function close() {
   sentCount = 0;
 }
 
-module.exports = { chat, reset, close, setTui, openLogin };
+module.exports = { chat, reset, close, setTui, openLogin, _parseReply: parseReply };
