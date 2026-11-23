@@ -62,6 +62,9 @@ terdaftar yang boleh dipanggil.
 Selain Gemini, tersedia **ChatGPT web** (`chatgpt-web`) — juga tanpa API key. Pertama kali:
 `hafitri --chatgpt-login` (membuka chatgpt.com di noVNC), login manual, lalu
 `hafitri --chatgpt "tugas"`. Di TUI: `/provider chatgpt-web` dan `/login chatgpt`.
+Karena ChatGPT web tidak mengekspos tool call, aksi shell diminta dalam format polos `PERINTAH: <cmd>`
+lalu dijalankan hafitri; jawaban akhir tetap dirangkum ChatGPT. Untuk aksi file/web yang kompleks,
+Gemini web lebih lengkap.
 
 Paksa provider lewat flag: `hafitri --gemini "tugas"`, `hafitri --chatgpt "tugas"`, atau `hafitri --api "tugas"`.
 Untuk provider `api`, wizard isi key muncul saat first run (tersimpan di `.env`, chmod 600).
