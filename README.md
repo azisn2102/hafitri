@@ -61,7 +61,9 @@ terdaftar yang boleh dipanggil.
 
 Selain Gemini, tersedia **ChatGPT web** (`chatgpt-web`) — juga tanpa API key. Pertama kali:
 `hafitri --chatgpt-login` (membuka chatgpt.com di noVNC), login manual, lalu
-`hafitri --chatgpt "tugas"`. Di TUI: `/provider chatgpt-web` dan `/login chatgpt`.
+`hafitri --chatgpt "tugas"`. Di TUI: `/provider` membuka picker provider (↑↓ + Enter, ESC batal), lalu `/login chatgpt`
+bila belum login. Generate gambar di ChatGPT memakai tombol **Add files and more → Create image**;
+gambar aslinya disimpan otomatis.
 Karena ChatGPT web tidak mengekspos tool call, aksi shell diminta dalam format polos `PERINTAH: <cmd>`
 lalu dijalankan hafitri; jawaban akhir tetap dirangkum ChatGPT. Untuk aksi file/web yang kompleks,
 Gemini web lebih lengkap.

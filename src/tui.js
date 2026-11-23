@@ -104,7 +104,7 @@ const HELP = [
   '/session url       URL noVNC',
   '/model <nama>      auto|flash|hydrogen|pro (Gemini) atau nama model API',
   '/reasoning <level> rendah|menengah|tinggi|off (khusus Hydrogen)',
-  '/provider <nama>  gemini-web | chatgpt-web | api',
+  '/provider         pilih provider (↑↓ + Enter, ESC batal)',
   '/yolo [on|off]     izinkan perintah berisiko',
   '/steps N           batas langkah tool',
   '/quit              keluar',
@@ -164,12 +164,24 @@ function start(opts) {
     },
   });
 
+  const providerPicker = blessed.list({
+    top: 3, left: 2, width: '86%', height: '40%',
+    label: ' PILIH PROVIDER — ↑↓ lalu Enter, ESC batal ', border: { type: 'round' },
+    hidden: true, keys: true, mouse: true, vi: false,
+    style: {
+      fg: palette.text, bg: palette.panel,
+      border: { fg: palette.accent }, label: { fg: palette.accent, bold: true },
+      selected: { fg: palette.text, bg: palette.accent },
+    },
+  });
+
   screen.append(header);
   screen.append(log);
   screen.append(status);
   screen.append(input);
   screen.append(notice);
   screen.append(picker);
+  screen.append(providerPicker);
 
   let noticeTimer = null;
   function notify(text, ms = 8000) {
@@ -208,6 +220,40 @@ function start(opts) {
     const index = picker.selected;
     closePicker();
     if (rows[index]) loadSession(rows[index].id);
+  }
+
+  const PROVIDERS = [
+    { id: 'gemini-web', label: 'Gemini web — gratis, tool lengkap, generate gambar' },
+    { id: 'chatgpt-web', label: 'ChatGPT web — gratis, shell + generate gambar' },
+    { id: 'api', label: 'API OpenAI-compatible — butuh AI_API_KEY' },
+  ];
+  let providerPickerActive = false;
+  function showProviderPicker() {
+    const current = cfg.provider;
+    providerPicker.setItems(PROVIDERS.map((p) => `${p.id === current ? '*' : ' '} ${p.label}`));
+    providerPicker.select(Math.max(0, PROVIDERS.findIndex((p) => p.id === current)));
+    providerPicker.show();
+    providerPickerActive = true;
+    screen.render();
+  }
+  function closeProviderPicker() {
+    providerPickerActive = false;
+    providerPicker.hide();
+    focusInput();
+    screen.render();
+  }
+  function chooseProvider() {
+    const picked = PROVIDERS[providerPicker.selected];
+    closeProviderPicker();
+    if (picked) {
+      cfg.provider = picked.id;
+      geminiWeb.reset();
+      chatgptWeb.reset();
+      notify(picked.id === 'chatgpt-web'
+        ? 'provider = ChatGPT web — /login chatgpt bila belum login'
+        : `provider = ${picked.id}`);
+      drawHeader();
+    }
   }
 
   let messages = null;
@@ -274,6 +320,9 @@ function start(opts) {
     input.style.label.fg = palette.accent;
     notice.style.fg = palette.text; notice.style.bg = palette.panel;
     notice.style.border.fg = palette.accent; notice.style.label.fg = palette.accent;
+    providerPicker.style.fg = palette.text; providerPicker.style.bg = palette.panel;
+    providerPicker.style.border.fg = palette.accent; providerPicker.style.label.fg = palette.accent;
+    providerPicker.style.selected.fg = palette.text; providerPicker.style.selected.bg = palette.accent;
     log.options.scrollbar.style.bg = palette.bg;
     log.options.scrollbar.style.fg = palette.accent;
     log.options.scrollbar.track.style.fg = palette.border;
@@ -454,7 +503,8 @@ function start(opts) {
         drawHeader();
         break;
       case 'provider':
-        if (!['gemini-web', 'chatgpt-web', 'api'].includes(arg)) notify('pakai: /provider gemini-web|chatgpt-web|api');
+        if (!arg) showProviderPicker();
+        else if (!['gemini-web', 'chatgpt-web', 'api'].includes(arg)) notify('pakai: /provider gemini-web|chatgpt-web|api');
         else {
           cfg.provider = arg;
           geminiWeb.reset();
@@ -529,6 +579,16 @@ function start(opts) {
   // ESC menutup panel INFO. Jangan biarkan textbox menganggap ESC sebagai "cancel input".
   input.on('keypress', (ch, key) => {
     if (!key) return;
+    if (providerPickerActive) {
+      if (key.name === 'up') providerPicker.up();
+      else if (key.name === 'down') providerPicker.down();
+      else if (key.name === 'enter') chooseProvider();
+      else if (key.name === 'escape') closeProviderPicker();
+      else return;
+      key.name = '';
+      screen.render();
+      return;
+    }
     if (pickerActive) {
       if (key.name === 'up') picker.up();
       else if (key.name === 'down') picker.down();

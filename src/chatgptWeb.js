@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const cfg = require('./config');
 const sess = require('./browser');
 
@@ -81,6 +83,12 @@ async function sendPrompt(text) {
     const el = document.querySelector('[role="textbox"][aria-label="Ask ChatGPT"]');
     if (!el) return false;
     el.focus();
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    r.collapse(false);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
     return true;
   })()`);
   if (!ok) throw new Error('Kolom input ChatGPT tidak ditemukan. Buka noVNC + /login chatgpt lalu login manual.');
@@ -128,6 +136,44 @@ function parseReply(text, tools) {
   return { role: 'assistant', content: clean || '(kosong)' };
 }
 
+/** Aktifkan mode "Create image" di menu + ChatGPT. */
+async function setImageMode() {
+  const plus = `(() => {
+    const b = [...document.querySelectorAll('button')].find(e => /Add files and more/i.test(e.getAttribute('aria-label') || ''));
+    if (!b) return false; b.click(); return true;
+  })()`;
+  await evaluate(plus);
+  await sleep(900);
+  const clicked = await evaluate(`(() => {
+    const it = [...document.querySelectorAll('[role="menuitem"],button')]
+      .find(e => /Create image/i.test((e.innerText || '') + ' ' + (e.getAttribute('aria-label') || '')));
+    if (!it) return false; it.click(); return true;
+  })()`);
+  await sleep(1200);
+  if (clicked) progress('mode Create image aktif');
+  return clicked;
+}
+
+/** Simpan piksel asli gambar hasil ChatGPT (blob URL) ke direktori tujuan. */
+async function saveImage(dirOverride) {
+  const dataUrl = await evaluate(`(async () => {
+    const im = [...document.querySelectorAll('img[alt*="Generated image"], img[src^="blob:"]')].pop();
+    if (!im) return null;
+    await im.decode();
+    const cv = document.createElement('canvas');
+    cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+    cv.getContext('2d').drawImage(im, 0, 0);
+    return cv.toDataURL('image/png');
+  })()`);
+  if (!dataUrl || !dataUrl.startsWith('data:image/')) throw new Error('gambar asli tidak bisa diambil');
+  const dir = dirOverride || process.env.CHATGPT_IMAGE_DIR || process.env.HAFITRI_IMAGE_DIR || path.join(cfg.root, 'downloads');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `cgpt-img-${Date.now()}.png`);
+  fs.writeFileSync(file, Buffer.from(dataUrl.split(',')[1] || '', 'base64'));
+  fs.chmodSync(file, 0o644);
+  return file;
+}
+
 function countReplies() {
   return evaluate(`(() => document.querySelectorAll('[data-message-author-role="assistant"], [class*="DilResponseRoot"]').length)()`);
 }
@@ -144,12 +190,19 @@ async function waitResponse(timeoutMs = 120000, beforeCount = 0) {
         count: els.length,
         busy: !!document.querySelector('button[data-testid="stop-button"], button[aria-label*="Stop generating"]'),
         text: els.length ? els[els.length - 1].innerText.trim() : '',
+        image: (() => {
+          const im = [...document.querySelectorAll('img[alt*="Generated image"], img[src^="blob:"]')].pop();
+          return im ? im.src : '';
+        })(),
       };
     })()`);
-    const sig = (state && state.text) || '';
+    const sig = (state && (state.image || state.text)) || '';
     if (sig && sig === last) stable++;
     else { last = sig; stable = 0; }
-    if (state && state.count > beforeCount && !state.busy && last && stable >= 3) return last;
+    if (state && state.count > beforeCount && !state.busy && last && stable >= 3) {
+      if (state.image) return 'IMAGE_BLOB:' + state.image;
+      return state.text || last;
+    }
   }
   throw new Error('Respons ChatGPT timeout setelah 120 detik.');
 }
@@ -159,12 +212,26 @@ async function doChat(messages, tools) {
   const fresh = messages.slice(sentCount);
   sentCount = messages.length;
   if (!fresh.length) return { role: 'assistant', content: '(tidak ada pesan baru)' };
-  const prompt = buildPrompt(messages, fresh, tools);
   const allowedNames = (tools || []).map((t) => t.function && t.function.name).filter(Boolean).join(', ');
   const ask = fresh.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
+  const wantsImage = /\b(gambar|foto|ilustrasi|image|gambarkan|lukis)\b/i.test(ask);
+  if (wantsImage) await setImageMode();
+  const prompt = wantsImage ? ask : buildPrompt(messages, fresh, tools);
   const before1 = await countReplies();
   await sendPrompt(prompt);
   let reply = await waitResponse(120000, before1);
+  if (reply.startsWith('IMAGE_BLOB:')) {
+    progress('gambar terdeteksi — menyimpan...');
+    try {
+      const pathMatch = ask.match(/(?:simpan|save|taruh|letak)\w*\s+(?:gambar\s+)?(?:di\s+)?([^\s"']+\/[^\s"']*)/i);
+      const destDir = pathMatch && !/\.(png|jpe?g|webp)$/i.test(pathMatch[1]) ? pathMatch[1] : null;
+      const file = await saveImage(destDir);
+      reply = 'FINAL: Gambar berhasil dibuat dan disimpan di ' + file;
+    } catch (e) {
+      reply = 'FINAL: gambar dibuat ChatGPT, tapi gagal disimpan: ' + e.message;
+    }
+    sentCount = 0; // chat berikutnya mulai bersih (tanpa mode Create image)
+  }
   let msg = parseReply(reply, tools);
   const wantsAction = /\b(jalankan|eksekusi|install|update|apt|npm|git|curl|node|ls|hapus|tulis|unduh|buka|cek)\b/i.test(ask);
   if (msg.invalidTool || (!msg.tool_calls && wantsAction)) {
