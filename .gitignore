@@ -3,4 +3,5 @@ node_modules/
 .profile/
 .run/
 .sessions/
+downloads/
 *.log

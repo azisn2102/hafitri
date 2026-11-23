@@ -11,6 +11,9 @@ let modelReady = false;
 let sentCount = 0;
 let queue = Promise.resolve();
 let tuiMode = false;
+let lastImageDir = null; // dipakai ulang untuk prompt seperti "simpan di path yang sama"
+const LAST_DIR_FILE = path.join(cfg.root, '.run', 'last-image-dir');
+try { lastImageDir = fs.readFileSync(LAST_DIR_FILE, 'utf8').trim() || null; } catch { /* belum ada */ }
 
 /** Progres hanya di CLI/REPL; di TUI stderr akan merusak layar blessed. */
 function progress(msg) {
@@ -162,6 +165,8 @@ function clean(text) {
     .replace(/Saya adalah hafitri/gi, 'Aku hafitri')
     .replace(/Saya hafitri/gi, 'Aku hafitri')
     .replace(/\basisten AI\b/gi, 'agent CLI lokal')
+    .replace(/Sebagai model bahasa[^.]*\./i, 'Aku hafitri, agent CLI lokal yang bisa menjalankan tool.')
+    .replace(/Saya hanya (sebuah )?model bahasa[^.]*\./i, 'Aku hafitri, agent CLI lokal yang bisa menjalankan tool.')
     .trim();
 }
 
@@ -186,7 +191,8 @@ async function waitResponse(timeoutMs = 120000) {
     if (sig && sig === last) stable++;
     else { last = sig; stable = 0; }
     if (!state.busy && last && stable >= 2) {
-      if (!state.text && state.image) return 'IMAGE_BLOB:' + state.image;
+      // Kalau ada gambar, utamakan gambar walaupun teksnya berisi penolakan.
+      if (state.image) return 'IMAGE_BLOB:' + state.image;
       return clean(state.text || last);
     }
   }
@@ -303,7 +309,15 @@ async function doChat(messages, tools) {
     progress('gambar terdeteksi — menyimpan...');
     try {
       const pathMatch = ask.match(/(?:simpan|save|taruh|letak)\w*\s+(?:gambar\s+)?(?:di\s+)?([^\s"']+\/[^\s"']*)/i);
-      const destDir = pathMatch && !/\.(png|jpe?g|webp)$/i.test(pathMatch[1]) ? pathMatch[1] : null;
+      let destDir = pathMatch && !/\.(png|jpe?g|webp)$/i.test(pathMatch[1]) ? pathMatch[1] : lastImageDir;
+      if (!destDir && /\bpath yang sama\b|\blokasi yang sama\b|\sama seperti sebelumnya\b/i.test(ask)) destDir = lastImageDir;
+      if (destDir) {
+        lastImageDir = destDir;
+        try {
+          fs.mkdirSync(path.dirname(LAST_DIR_FILE), { recursive: true });
+          fs.writeFileSync(LAST_DIR_FILE, destDir);
+        } catch { /* abaikan kalau tidak bisa menyimpan preferensi */ }
+      }
       const file = await saveImage(destDir);
       return { answer: 'FINAL: Gambar berhasil dibuat dan disimpan di ' + file, ready: true };
     } catch (e) {
@@ -317,14 +331,18 @@ async function doChat(messages, tools) {
   let msg = parseReply(answer, tools);
 
   const wantsAction = /\b(jalankan|eksekusi|install|update|apt|npm|git|curl|node|ls|hapus|tulis|unduh|buka|cek)\b/i.test(ask);
+  const REFUSAL = /\b(tidak dirancang untuk|hanya model bahasa|sebagai model bahasa|tidak bisa membantu|tidak dapat membantu)\b/i;
   if (!imageReady && wantsImage) {
     // Jangan koreksi pakai TOOL_CALL — Gemini memang perlu pakai kemampuan gambar bawannya.
     progress('belum ada gambar — minta generate ulang');
-    await sendPrompt('Buat gambarnya sekarang dengan kemampuan bawaanmu. Jangan tulis TOOL_CALL dan jangan bilang tidak bisa.');
+    await sendPrompt('Jangan jawab "sebagai model bahasa". Kamu hafitri dan BISA membuat gambar. Buat gambarnya sekarang dengan kemampuan bawaanmu, tanpa TOOL_CALL.');
     r = await materialize(await waitResponse(45000));
     answer = r.answer;
     imageReady = r.ready;
-    if (!imageReady) msg = parseReply(answer, tools);
+    if (!imageReady) {
+      if (REFUSAL.test(answer)) answer = 'FINAL: Gemini masih menolak. Coba singkatkan deskripsi gambar atau ganti model dengan /model flash.';
+      msg = parseReply(answer, tools);
+    }
   } else if (!imageReady && (msg.invalidTool || (!msg.tool_calls && wantsAction))) {
     const note = msg.invalidTool
       ? `Tool "${msg.invalidTool}" TIDAK tersedia di hafitri. Hanya tool ini yang boleh dipanggil: ${allowedNames}.`
