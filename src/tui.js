@@ -11,7 +11,7 @@ const store = require('./sessionStore');
 const THEMES = {
   opencode: {
     bg: 234, panel: 236, border: 238, text: 252, muted: 250,
-    accent: 141, tool: 51, user: 214, error: 203, ok: 78,
+    accent: 33, tool: 51, user: 214, error: 203, ok: 78,
     brand: '◆', userMark: '❯', agentMark: '◆', toolMark: '⚙',
   },
   mimo: {

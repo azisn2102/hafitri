@@ -39,7 +39,7 @@ dan menjadi konteks pesan berikutnya. Beberapa sesi bisa disimpan: `/new` membua
 Dari shell, `hafitri --new` langsung membuka sesi baru. Riwayat lama `chat.json`
 otomatis dimigrasikan ke format multi-sesi saat pertama dijalankan.
 
-Tema default `opencode`: latar gelap, border round, aksen ungu, marker peran berwarna
+Tema default `opencode`: latar gelap, border round, aksen biru, marker peran berwarna
 (`❯ ANDA`, `◆ HAFITRI`, `⚙ TOOL`). Alternatif `mimo` lebih minimal dengan aksen hijau.
 Ganti kapan saja lewat `/theme mimo` atau `/theme opencode`.
 
