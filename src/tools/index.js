@@ -3,6 +3,8 @@ const { runShell } = require('./shell');
 const { read_file, write_file, list_dir, grep } = require('./fs');
 const { web_fetch, web_search } = require('./web');
 const { browserTool } = require('./browserTool');
+const memory = require('../memory');
+const store = require('../sessionStore');
 
 const TOOLS = [
   {
@@ -108,6 +110,43 @@ const TOOLS = [
       required: ['action'],
     },
     handler: (a) => browserTool(a),
+  },
+  {
+    name: 'memory_save',
+    description: 'Simpan catatan penting sesi ke cache memori hafitri (project, keputusan, file, gambar, preferensi, URL, langkah berikutnya). Gunakan saat ada fakta penting yang harus diingat lintas model/provider.',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'note|project|decision|file|image|url|todo|preference' },
+        title: { type: 'string' },
+        text: { type: 'string', description: 'Detail singkat tapi spesifik' },
+        path: { type: 'string', description: 'Path file/gambar jika ada' },
+        tags: { type: 'array', items: { type: 'string' } },
+        pinned: { type: 'boolean', description: 'true untuk fakta penting jangka panjang sesi ini' },
+      },
+      required: ['title'],
+    },
+    handler: (a) => {
+      const item = memory.upsert(store.activeId() || 'default', a || {});
+      return `memori tersimpan: [${item.type}] ${item.title}${item.path ? ' (' + item.path + ')' : ''}`;
+    },
+  },
+  {
+    name: 'memory_search',
+    description: 'Cari catatan memori sesi hafitri. Gunakan sebelum menjawab kalau butuh detail project/file/gambar/keputusan lama.',
+    parameters: {
+      type: 'object',
+      properties: {
+        q: { type: 'string', description: 'Kata kunci' },
+        type: { type: 'string' },
+        limit: { type: 'integer' },
+      },
+    },
+    handler: (a) => {
+      const items = memory.list(store.activeId() || 'default', a || {});
+      if (!items.length) return '(tidak ada memori yang cocok)';
+      return items.map((x) => `- [${x.type}] ${x.title}${x.path ? ' (' + x.path + ')' : ''}\n  ${x.text || ''}`).join('\n');
+    },
   },
 ];
 
