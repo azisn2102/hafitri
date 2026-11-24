@@ -607,7 +607,7 @@ function start(opts) {
         pending.length = 0;
         geminiWeb.reset();
         showMessages([]);
-        notify(`sesi baru ${id} — sesi lama tetap tersimpan, /sessions untuk melihat`);
+        drawStatus('');
         break;
       }
       case 'sessions':
