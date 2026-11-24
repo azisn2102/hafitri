@@ -29,6 +29,7 @@ const cfg = {
   geminiUrl: process.env.GEMINI_URL || 'https://gemini.google.com/app',
   chatgptUrl: process.env.CHATGPT_URL || 'https://chatgpt.com/',
   claudeUrl: process.env.CLAUDE_URL || 'https://claude.ai/',
+  deepseekUrl: process.env.DEEPSEEK_URL || 'https://chat.deepseek.com/',
   maxSteps: parseInt(process.env.MAX_STEPS || '24', 10) || 24,
   browserBin: process.env.BROWSER_BIN || '',
   display: process.env.BROWSER_DISPLAY || ':99',

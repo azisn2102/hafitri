@@ -10,6 +10,7 @@ const sess = require('./src/browser');
 const geminiWeb = require('./src/geminiWeb');
 const chatgptWeb = require('./src/chatgptWeb');
 const claudeWeb = require('./src/claudeWeb');
+const deepseekWeb = require('./src/deepseekWeb');
 const tui = require('./src/tui');
 const store = require('./src/sessionStore');
 
@@ -31,6 +32,8 @@ Pemakaian:
   hafitri --chatgpt-login         buka ChatGPT di noVNC untuk login manual
   hafitri --claude "tugas"        pakai Claude web (sesi login, tanpa API key)
   hafitri --claude-login          buka Claude di noVNC untuk login manual
+  hafitri --deepseek "tugas"      pakai DeepSeek web (sesi login, tanpa API key)
+  hafitri --deepseek-login        buka DeepSeek di noVNC untuk login manual
   hafitri --api "tugas"           pakai API OpenAI-compatible (butuh AI_API_KEY)
   hafitri                         TUI full-screen (default di terminal)
   hafitri --new                   mulai sesi baru (hapus riwayat lama)
@@ -39,7 +42,7 @@ Pemakaian:
   hafitri --session               REPL + langsung start sesi noVNC
   hafitri --steps 40 "..."        batasi langkah tool
 
-Opsi: --gemini, --chatgpt, --claude, --chatgpt-login, --claude-login, --api, --new, --tui, --plain, --login, --yolo, --help
+Opsi: --gemini, --chatgpt, --claude, --deepseek, --chatgpt-login, --claude-login, --deepseek-login, --api, --new, --tui, --plain, --login, --yolo, --help
 REPL: /help /tools /reset /login /session start|stop|status|url /yolo /steps /model /quit`);
 }
 
@@ -51,8 +54,9 @@ async function ensureConfig(opts) {
   if (opts.gemini) cfg.provider = 'gemini-web';
   if (opts.chatgpt) cfg.provider = 'chatgpt-web';
   if (opts.claude) cfg.provider = 'claude-web';
+  if (opts.deepseek) cfg.provider = 'deepseek-web';
   if (opts.api) cfg.provider = 'api';
-  if (['gemini-web', 'chatgpt-web', 'claude-web'].includes(cfg.provider)) return true;
+  if (['gemini-web', 'chatgpt-web', 'claude-web', 'deepseek-web'].includes(cfg.provider)) return true;
   if (cfg.apiKey) return true;
   if (!process.stdin.isTTY) {
     console.error(c.yellow('AI_API_KEY belum ada. Pakai --gemini (sesi login) atau isi AI_API_KEY di /home/ai-agent/.env.'));
@@ -115,7 +119,8 @@ async function repl(opts) {
   const label = cfg.provider === 'gemini-web'
     ? `Gemini web (${cfg.geminiModel})`
     : cfg.provider === 'chatgpt-web' ? 'ChatGPT web'
-      : cfg.provider === 'claude-web' ? 'Claude web' : `${cfg.model} @ ${cfg.baseUrl}`;
+      : cfg.provider === 'claude-web' ? 'Claude web'
+        : cfg.provider === 'deepseek-web' ? 'DeepSeek web' : `${cfg.model} @ ${cfg.baseUrl}`;
   console.log(c.bold(`hafitri v0.1`) + c.dim(` | model: ${label} | /help`));
 
   rl.on('SIGINT', () => {
@@ -132,7 +137,7 @@ async function repl(opts) {
       const [cmd, ...rest] = line.slice(1).split(/\s+/);
       const arg = rest.join(' ');
       try {
-        if (cmd === 'quit' || cmd === 'exit') { geminiWeb.close(); chatgptWeb.close(); claudeWeb.close(); rl.close(); break; }
+        if (cmd === 'quit' || cmd === 'exit') { geminiWeb.close(); chatgptWeb.close(); claudeWeb.close(); deepseekWeb.close(); rl.close(); break; }
         if (cmd === 'help') {
           console.log('/help              bantuan ini\n' +
             '/tools             daftar tool\n' +
@@ -195,7 +200,7 @@ async function repl(opts) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false, gemini: false, chatgpt: false, chatgptLogin: false, claude: false, claudeLogin: false, api: false, tui: false, plain: false, fresh: false };
+  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false, gemini: false, chatgpt: false, chatgptLogin: false, claude: false, claudeLogin: false, deepseek: false, deepseekLogin: false, api: false, tui: false, plain: false, fresh: false };
   const parts = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -205,6 +210,8 @@ async function main() {
     else if (a === '--chatgpt-login') opts.chatgptLogin = true;
     else if (a === '--claude') opts.claude = true;
     else if (a === '--claude-login') opts.claudeLogin = true;
+    else if (a === '--deepseek') opts.deepseek = true;
+    else if (a === '--deepseek-login') opts.deepseekLogin = true;
     else if (a === '--api') opts.api = true;
     else if (a === '--session') opts.session = true;
     else if (a === '--login') opts.login = true;
@@ -226,6 +233,11 @@ async function main() {
     console.log(`Claude dibuka: ${cfg.claudeUrl}\nnoVNC: ${url}\nLogin manual di jendela Chromium, lalu jalankan: hafitri --claude "tugas"`);
     return;
   }
+  if (opts.deepseekLogin) {
+    const url = await deepseekWeb.openLogin();
+    console.log(`DeepSeek dibuka: ${cfg.deepseekUrl}\nnoVNC: ${url}\nLogin manual di jendela Chromium, lalu jalankan: hafitri --deepseek "tugas"`);
+    return;
+  }
   if (!(await ensureConfig(opts))) return;
   if (opts.fresh) {
     const id = store.create();
@@ -240,6 +252,7 @@ async function main() {
     geminiWeb.close(); // lepas WebSocket CDP, kalau tidak proses menggantung setelah selesai
     chatgptWeb.close();
     claudeWeb.close();
+    deepseekWeb.close();
   } else if (opts.tui || (!opts.plain && process.stdin.isTTY)) {
     tui.start(opts);
   } else {
@@ -251,6 +264,7 @@ main().catch((e) => {
   geminiWeb.close(); // pastikan WebSocket CDP tidak menahan proses saat error
   chatgptWeb.close();
   claudeWeb.close();
+  deepseekWeb.close();
   console.error(c.yellow('FATAL: ' + (e && e.stack ? e.stack : e)));
   process.exitCode = 1;
 });
