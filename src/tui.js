@@ -488,15 +488,13 @@ function start(opts) {
 
   function drawStatus(extra) {
     if (extra !== undefined) statusExtra = extra;
+    const cols = screen.cols || 80;
     const spin = busy ? `${SPIN[spinFrame]} berpikir` : '✓ siap';
-    const parts = [
-      spin,
-      `sesi ${sessionState}`,
-      `tema ${theme}`,
-      `respons ${latency}`,
-    ];
+    const parts = [spin, `sesi ${sessionState}`];
+    if (cols > 70) parts.push(`tema ${theme}`);
+    if (cols > 52) parts.push(`${latency}`);
     if (statusExtra) parts.push(statusExtra);
-    const sep = tag(palette, `{M}  │  {/M}`);
+    const sep = tag(palette, `{M} │ {/M}`);
     status.setContent(' ' + parts.map((p, i) => {
       if (i === 0) return busy ? tag(palette, `{A}${p}{/A}`) : tag(palette, `{K}${p}{/K}`);
       return p === statusExtra ? tag(palette, `{U}${p}{/U}`) : tag(palette, `{M}${p}{/M}`);
@@ -708,7 +706,7 @@ function start(opts) {
     }
     if (busy) {
       pending.push(line);
-      notify(`masih memproses... prompt masuk antrian (${pending.length})`);
+      notify(`prompt diantrikan (${pending.length})`);
       return;
     }
     append('user', line);
@@ -717,7 +715,7 @@ function start(opts) {
 
     const started = Date.now();
     setBusy(true);
-    drawStatus('memproses...');
+    drawStatus(pending.length ? `antrian ${pending.length}` : '');
     try {
       const answer = await step(messages, opts, (ev) => {
         append('tool', `${ev.name} ${JSON.stringify(ev.args || {})}`);
@@ -733,7 +731,7 @@ function start(opts) {
       setBusy(false);
       store.save(store.activeId(), messages);
       focusInput();
-      drawStatus(pending.length ? `${pending.length} prompt menunggu` : '');
+      drawStatus(pending.length ? `antrian ${pending.length}` : '');
       if (pending.length) setImmediate(() => handle(pending.shift()));
     }
   }
