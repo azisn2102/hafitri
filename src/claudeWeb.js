@@ -64,14 +64,17 @@ async function ensurePage() {
         progress('lanjut chat Claude: ' + chatUrl);
         await conn.send('Page.enable');
         await conn.send('Page.navigate', { url: chatUrl });
+        let ok = false;
         for (let i = 0; i < 30; i++) {
           await sleep(500);
           const now = await evaluate('location.href').catch(() => '');
-          if (/claude\.ai\/chat\/[a-zA-Z0-9_-]+/.test(now || '')) break;
+          if (now === chatUrl || /claude\.ai\/chat\/[a-zA-Z0-9_-]+/.test(now || '')) { ok = true; break; }
         }
-        await sleep(1200);
+        await sleep(1000);
+        if (!ok) { progress('URL chat lama tidak bisa dibuka — mulai chat baru'); chatUrl = null; }
       }
-    } else {
+    }
+    if (!chatUrl) {
       progress('chat baru...');
       await conn.send('Page.enable');
       await conn.send('Page.navigate', { url: cfg.claudeUrl });
@@ -313,7 +316,7 @@ async function openLogin() {
   return url;
 }
 
-function reset() { sentCount = 0; }
+function reset() { sentCount = 0; } // sengaja tidak menghapus chatUrl: URL terikat ke sesi hafitri
 function getChatUrl() { return chatUrl; }
 function setChatUrl(url) { chatUrl = url && /claude\.ai\/chat\/[a-zA-Z0-9_-]+/.test(url) ? url : null; }
 function close() {

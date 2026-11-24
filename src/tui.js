@@ -653,7 +653,11 @@ function start(opts) {
         const id = store.create();
         messages = null;
         pending.length = 0;
-        geminiWeb.reset();
+        geminiWeb.reset(); geminiWeb.setChatUrl('');
+        chatgptWeb.reset(); chatgptWeb.setChatUrl('');
+        claudeWeb.reset(); claudeWeb.setChatUrl('');
+        deepseekWeb.reset(); deepseekWeb.setChatUrl('');
+        geminiApi.reset(); aistudioWeb.reset();
         showMessages([]);
         drawStatus('');
         break;
@@ -668,13 +672,14 @@ function start(opts) {
       case 'reset':
         messages = null;
         pending.length = 0;
-        geminiWeb.reset();
-        chatgptWeb.reset();
-        claudeWeb.reset();
-        deepseekWeb.reset();
+        geminiWeb.reset(); geminiWeb.setChatUrl('');
+        chatgptWeb.reset(); chatgptWeb.setChatUrl('');
+        claudeWeb.reset(); claudeWeb.setChatUrl('');
+        deepseekWeb.reset(); deepseekWeb.setChatUrl('');
         geminiApi.reset();
         aistudioWeb.reset();
-        store.save(store.activeId(), []);
+        store.save(store.activeId(), [], { geminiChatUrl: '', chatgptChatUrl: '', claudeChatUrl: '', deepseekChatUrl: '' });
+        try { memory.clear(store.activeId() || 'default'); } catch { /* abaikan */ }
         showMessages([]);
         notify('sesi aktif dikosongkan — sesi lain tetap tersimpan');
         break;
