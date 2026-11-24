@@ -269,7 +269,18 @@ async function main() {
 
   const task = parts.join(' ').trim();
   if (task) {
-    await runTask(newSession(task), opts);
+    const messages = newSession(task);
+    await runTask(messages, opts);
+    // Simpan sesi + metadata URL chat native agar /sessions TUI bisa lanjut di chat yang sama.
+    try {
+      const id = store.activeId() || store.create();
+      store.save(id, messages, {
+        geminiChatUrl: geminiWeb.getChatUrl() || '',
+        chatgptChatUrl: chatgptWeb.getChatUrl() || '',
+        claudeChatUrl: claudeWeb.getChatUrl() || '',
+        deepseekChatUrl: deepseekWeb.getChatUrl() || '',
+      });
+    } catch { /* jangan gagalkan tugas hanya karena simpan sesi */ }
     geminiWeb.close(); // lepas WebSocket CDP, kalau tidak proses menggantung setelah selesai
     chatgptWeb.close();
     claudeWeb.close();
