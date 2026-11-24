@@ -12,6 +12,7 @@ const deepseekWeb = require('./deepseekWeb');
 const geminiApi = require('./geminiApi');
 const aistudioWeb = require('./aistudioWeb');
 const store = require('./sessionStore');
+const memory = require('./memory');
 
 const THEMES = {
   opencode: {
@@ -311,6 +312,7 @@ function start(opts) {
     const target = rows[index];
     if (!target) return;
     store.remove(target.id);
+    try { memory.clear(target.id); } catch { /* abaikan */ }
     const next = store.list();
     if (!next.length) {
       closePicker();

@@ -3,5 +3,6 @@ node_modules/
 .profile/
 .run/
 .sessions/
+.memory/
 downloads/
 *.log
