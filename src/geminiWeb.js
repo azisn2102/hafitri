@@ -11,6 +11,7 @@ let modelReady = false;
 let sentCount = 0;
 let queue = Promise.resolve();
 let tuiMode = false;
+let chatUrl = null; // simpan URL /app/<id> agar sesi hafitri lanjut di chat Gemini yang sama
 let lastImageDir = null; // dipakai ulang untuk prompt seperti "simpan di path yang sama"
 const LAST_DIR_FILE = path.join(cfg.root, '.run', 'last-image-dir');
 try { lastImageDir = fs.readFileSync(LAST_DIR_FILE, 'utf8').trim() || null; } catch { /* belum ada */ }
@@ -96,14 +97,29 @@ async function ensurePage() {
     }
     await sleep(1500);
   }
-  // Tiap tugas baru memakai chat bersih; lanjutan tool tetap di chat yang sama.
+  // Lanjutkan chat Gemini yang sama bila sesi hafitri sudah punya URL /app/<id>.
   if (sentCount === 0) {
-    await evaluate(conn, `(() => {
-      const a = document.querySelector('a[aria-label="Chat baru"]');
-      if (a) a.click();
-      return !!a;
-    })()`).catch(() => {});
-    await sleep(1300);
+    if (chatUrl) {
+      const cur = await evaluate(conn, 'location.href').catch(() => '');
+      if (cur !== chatUrl) {
+        progress('lanjut chat Gemini: ' + chatUrl);
+        await conn.send('Page.enable');
+        await conn.send('Page.navigate', { url: chatUrl });
+        for (let i = 0; i < 30; i++) {
+          await sleep(500);
+          const now = await evaluate(conn, 'location.href').catch(() => '');
+          if (/gemini\.google\.com\/app\/[a-zA-Z0-9_-]+/.test(now || '')) break;
+        }
+        await sleep(1200);
+      }
+    } else {
+      await evaluate(conn, `(() => {
+        const a = document.querySelector('a[aria-label="Chat baru"]');
+        if (a) a.click();
+        return !!a;
+      })()`).catch(() => {});
+      await sleep(1300);
+    }
   }
   if (!modelReady) {
     await selectModel();
@@ -393,6 +409,12 @@ async function doChat(messages, tools) {
   await setImageMode(wantsImage);
   const beforeImage = await evaluate(conn, `(() => { const i=[...document.querySelectorAll('img[alt*="buatan AI"], img[src^="blob:"]')].pop(); return i ? i.src : ''; })()`).catch(() => '');
   await sendPrompt(prompt);
+  // Tangkap URL /app/<id> setelah pesan terkirim agar sesi ini bisa dilanjutkan nanti.
+  try {
+    await sleep(1200);
+    const cur = await evaluate(conn, 'location.href').catch(() => '');
+    if (/gemini\.google\.com\/app\/[a-zA-Z0-9_-]+/.test(cur || '')) chatUrl = cur;
+  } catch { /* abaikan */ }
 
   async function materialize(text) {
     if (!text.startsWith('IMAGE_BLOB:')) return { answer: text, ready: false };
@@ -464,6 +486,9 @@ function reset() {
   modelReady = false; // /model harus benar-benar mengganti model di picker
 }
 
+function getChatUrl() { return chatUrl; }
+function setChatUrl(url) { chatUrl = url && /gemini\.google\.com\/app\/[a-zA-Z0-9_-]+/.test(url) ? url : null; }
+
 async function setReasoning(level) {
   if (!level || String(level).toLowerCase() === 'off') reasoningLevel = null;
   else reasoningLevel = REASONING[String(level).toLowerCase()] || null;
@@ -483,4 +508,4 @@ function close() {
   sentCount = 0;
 }
 
-module.exports = { chat, reset, setTui, close, setReasoning, _parseReply: parseReply };
+module.exports = { chat, reset, setTui, close, setReasoning, getChatUrl, setChatUrl, _parseReply: parseReply };

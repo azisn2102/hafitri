@@ -58,12 +58,13 @@ function load(id) {
   catch { return null; }
 }
 
-function save(id, messages) {
+function save(id, messages, meta) {
   ensure();
   const current = load(id) || { id: id || 's' + Date.now(), createdAt: new Date().toISOString() };
   current.messages = messages || [];
   current.title = title(current.messages);
   current.updatedAt = new Date().toISOString();
+  if (meta && typeof meta === 'object') current.meta = { ...(current.meta || {}), ...meta };
   fs.writeFileSync(path.join(LIST, current.id + '.json'), JSON.stringify(current, null, 2));
   fs.chmodSync(path.join(LIST, current.id + '.json'), 0o600);
   return current;

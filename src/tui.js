@@ -608,9 +608,11 @@ function start(opts) {
       ? list[parseInt(idOrNumber, 10) - 1]
       : list.find((s) => s.id === idOrNumber);
     if (!picked) return notify('sesi tidak ditemukan');
+    if (messages && messages.length > 1) store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '' });
     store.setActive(picked.id);
     const data = store.load(picked.id);
     messages = data && data.messages && data.messages.length > 1 ? data.messages : null;
+    geminiWeb.setChatUrl(data && data.meta && data.meta.geminiChatUrl || '');
     pending.length = 0;
     geminiWeb.reset();
     showMessages(messages);
@@ -641,7 +643,7 @@ function start(opts) {
         notify(historyInfo());
         break;
       case 'new': {
-        if (messages && messages.length > 1) store.save(store.activeId(), messages);
+        if (messages && messages.length > 1) store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '' });
         const id = store.create();
         messages = null;
         pending.length = 0;
@@ -769,7 +771,7 @@ function start(opts) {
       append('error', 'ERROR: ' + (e && e.message ? e.message : String(e)));
     } finally {
       setBusy(false);
-      store.save(store.activeId(), messages);
+      store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '' });
       focusInput();
       drawStatus(pending.length ? `antrian ${pending.length}` : '');
       if (pending.length) setImmediate(() => handle(pending.shift()));
