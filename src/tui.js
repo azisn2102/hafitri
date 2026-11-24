@@ -608,17 +608,19 @@ function start(opts) {
       ? list[parseInt(idOrNumber, 10) - 1]
       : list.find((s) => s.id === idOrNumber);
     if (!picked) return notify('sesi tidak ditemukan');
-    if (messages && messages.length > 1) store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '', chatgptChatUrl: chatgptWeb.getChatUrl() || '', claudeChatUrl: claudeWeb.getChatUrl() || '' });
+    if (messages && messages.length > 1) store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '', chatgptChatUrl: chatgptWeb.getChatUrl() || '', claudeChatUrl: claudeWeb.getChatUrl() || '', deepseekChatUrl: deepseekWeb.getChatUrl() || '' });
     store.setActive(picked.id);
     const data = store.load(picked.id);
     messages = data && data.messages && data.messages.length > 1 ? data.messages : null;
     geminiWeb.setChatUrl(data && data.meta && data.meta.geminiChatUrl || '');
     chatgptWeb.setChatUrl(data && data.meta && data.meta.chatgptChatUrl || '');
     claudeWeb.setChatUrl(data && data.meta && data.meta.claudeChatUrl || '');
+    deepseekWeb.setChatUrl(data && data.meta && data.meta.deepseekChatUrl || '');
     pending.length = 0;
     geminiWeb.reset();
     chatgptWeb.reset();
     claudeWeb.reset();
+    deepseekWeb.reset();
     showMessages(messages);
     notify(`sesi ${picked.id} dimuat — ${picked.title}`);
   }
@@ -647,7 +649,7 @@ function start(opts) {
         notify(historyInfo());
         break;
       case 'new': {
-        if (messages && messages.length > 1) store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '', chatgptChatUrl: chatgptWeb.getChatUrl() || '', claudeChatUrl: claudeWeb.getChatUrl() || '' });
+        if (messages && messages.length > 1) store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '', chatgptChatUrl: chatgptWeb.getChatUrl() || '', claudeChatUrl: claudeWeb.getChatUrl() || '', deepseekChatUrl: deepseekWeb.getChatUrl() || '' });
         const id = store.create();
         messages = null;
         pending.length = 0;
@@ -775,7 +777,7 @@ function start(opts) {
       append('error', 'ERROR: ' + (e && e.message ? e.message : String(e)));
     } finally {
       setBusy(false);
-      store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '', chatgptChatUrl: chatgptWeb.getChatUrl() || '', claudeChatUrl: claudeWeb.getChatUrl() || '' });
+      store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '', chatgptChatUrl: chatgptWeb.getChatUrl() || '', claudeChatUrl: claudeWeb.getChatUrl() || '', deepseekChatUrl: deepseekWeb.getChatUrl() || '' });
       focusInput();
       drawStatus(pending.length ? `antrian ${pending.length}` : '');
       if (pending.length) setImmediate(() => handle(pending.shift()));

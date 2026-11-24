@@ -12,6 +12,7 @@ let conn = null;
 let sentCount = 0;
 let queue = Promise.resolve();
 let tuiMode = false;
+let chatUrl = null;
 
 const EDITOR = `document.querySelector('textarea[placeholder="Message DeepSeek"], textarea[name="search"], textarea[placeholder], [role="textbox"]')`;
 
@@ -57,16 +58,30 @@ async function ensurePage() {
     throw new Error('Belum login DeepSeek. Buka noVNC ' + sess.novncUrl() + ' lalu login, atau jalankan: hafitri --deepseek-login');
   }
   if (sentCount === 0) {
-    // Navigasi ke root benar-benar mengosongkan composer & mode Create image.
-    progress('chat baru...');
-    await conn.send('Page.enable');
-    await conn.send('Page.navigate', { url: cfg.deepseekUrl });
-    for (let i = 0; i < 20; i++) {
-      await sleep(500);
-      const ready = await evaluate(`!!${EDITOR}`).catch(() => false);
-      if (ready) break;
+    if (chatUrl) {
+      const cur = await evaluate('location.href').catch(() => '');
+      if (cur !== chatUrl) {
+        progress('lanjut chat DeepSeek: ' + chatUrl);
+        await conn.send('Page.enable');
+        await conn.send('Page.navigate', { url: chatUrl });
+        for (let i = 0; i < 30; i++) {
+          await sleep(500);
+          const now = await evaluate('location.href').catch(() => '');
+          if (/deepseek\.com\/a\/chat\/s\/[a-zA-Z0-9_-]+/.test(now || '')) break;
+        }
+        await sleep(1200);
+      }
+    } else {
+      progress('chat baru...');
+      await conn.send('Page.enable');
+      await conn.send('Page.navigate', { url: cfg.deepseekUrl });
+      for (let i = 0; i < 20; i++) {
+        await sleep(500);
+        const ready = await evaluate(`!!${EDITOR}`).catch(() => false);
+        if (ready) break;
+      }
+      await sleep(600);
     }
-    await sleep(600);
   }
   progress('halaman DeepSeek siap — kirim prompt');
 }
@@ -273,6 +288,7 @@ async function doChat(messages, tools) {
   const prompt = buildPrompt(messages, fresh, tools);
   const beforeText1 = await lastReplyText();
   await sendPrompt(prompt);
+  try { await sleep(1200); const cur = await evaluate('location.href').catch(() => ''); if (/deepseek\.com\/a\/chat\/s\/[a-zA-Z0-9_-]+/.test(cur || '')) chatUrl = cur; } catch { /* abaikan */ }
   const reply = await waitResponse(120000, beforeText1, '');
   let msg = parseReply(reply, tools);
   // DeepSeek kadang merangkai kalimat tanpa menyertakan keluaran tool.
@@ -317,6 +333,8 @@ async function openLogin() {
 }
 
 function reset() { sentCount = 0; }
+function getChatUrl() { return chatUrl; }
+function setChatUrl(url) { chatUrl = url && /deepseek\.com\/a\/chat\/s\/[a-zA-Z0-9_-]+/.test(url) ? url : null; }
 function close() {
   if (!conn) return;
   try { conn.close(); } catch { /* sudah tertutup */ }
@@ -324,4 +342,4 @@ function close() {
   sentCount = 0;
 }
 
-module.exports = { chat, reset, close, setTui, openLogin, _parseReply: parseReply };
+module.exports = { chat, reset, close, setTui, openLogin, getChatUrl, setChatUrl, _parseReply: parseReply };
