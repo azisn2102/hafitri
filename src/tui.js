@@ -538,15 +538,14 @@ function start(opts) {
       // Pisahkan giliran antar role (user/agent) dengan spasi tipis, bukan kotak.
       if (prev && prev.role !== e.role) out.push('');
 
-      const mark = e.role === 'user' ? palette.userMark
-        : e.role === 'agent' ? palette.agentMark : palette.toolMark;
-      const label = e.role === 'user' ? 'Anda'
-        : e.role === 'agent' ? 'Hafitri' : 'Tool';
       const c = e.role === 'user' ? 'U' : e.role === 'agent' ? 'A' : 'T';
-      const lines = wrapText(body, Math.max(10, inner - 2));
+      const mark = e.role === 'user' ? '▸' : e.role === 'agent' ? '●' : '·';
+      const lines = wrapText(body, Math.max(10, inner - 4));
 
-      out.push(tag(palette, `{${c}}{bold}${mark} ${label}{/bold}{/${c}}`));
-      for (const line of lines) out.push('  ' + linkify(line, palette));
+      lines.forEach((line, j) => {
+        if (j === 0) out.push(tag(palette, `{${c}}{bold}${mark}{/bold}{/${c}} `) + linkify(line, palette));
+        else out.push('  ' + linkify(line, palette));
+      });
     }
 
     log.setContent(out.join('\n'));
