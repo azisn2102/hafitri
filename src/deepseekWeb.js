@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
 const sess = require('./browser');
+const memory = require('./memory');
+const store = require('./sessionStore');
 
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -72,6 +74,8 @@ async function ensurePage() {
 function buildPrompt(messages, fresh, tools) {
   const out = [];
   if (sentCount === 0) out.push(SYSTEM);
+  const mem = memory.render(store.activeId() || 'default', 3500);
+  if (mem) out.push(mem);
   for (const m of fresh) {
     if (m.role === 'user') out.push('PESAN USER:\n' + m.content);
     else if (m.role === 'assistant' && m.tool_calls) {

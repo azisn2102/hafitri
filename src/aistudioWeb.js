@@ -1,6 +1,8 @@
 'use strict';
 const cfg = require('./config');
 const sess = require('./browser');
+const memory = require('./memory');
+const store = require('./sessionStore');
 
 const EDITOR = `document.querySelector('textarea[aria-label="Enter a prompt"], textarea.cdk-textarea-autosize')`;
 const TURN_TEXT = `(() => {
@@ -135,6 +137,8 @@ async function ensurePage() {
 function buildPrompt(messages, fresh, tools) {
   const out = [];
   if (sentCount === 0) out.push(SYSTEM);
+  const mem = memory.render(store.activeId() || 'default', 3500);
+  if (mem) out.push(mem);
   for (const m of fresh) {
     if (m.role === 'user') out.push('PESAN USER:\n' + m.content);
     else if (m.role === 'assistant' && m.tool_calls) {
