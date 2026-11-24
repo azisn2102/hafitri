@@ -5,6 +5,7 @@ const chatgptWeb = require('./chatgptWeb');
 const claudeWeb = require('./claudeWeb');
 const deepseekWeb = require('./deepseekWeb');
 const geminiApi = require('./geminiApi');
+const aistudioWeb = require('./aistudioWeb');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -20,6 +21,7 @@ async function chat(messages, tools) {
   if (cfg.provider === 'claude-web') return claudeWeb.chat(messages, tools);
   if (cfg.provider === 'deepseek-web') return deepseekWeb.chat(messages, tools);
   if (cfg.provider === 'gemini-api') return geminiApi.chat(messages, tools);
+  if (cfg.provider === 'aistudio-web') return aistudioWeb.chat(messages, tools);
   if (!cfg.apiKey) {
     throw new Error('AI_API_KEY belum diisi. Salin .env.example -> .env lalu isi API key, atau jalankan agent sekali lagi untuk wizard setup.');
   }

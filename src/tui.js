@@ -10,6 +10,7 @@ const chatgptWeb = require('./chatgptWeb');
 const claudeWeb = require('./claudeWeb');
 const deepseekWeb = require('./deepseekWeb');
 const geminiApi = require('./geminiApi');
+const aistudioWeb = require('./aistudioWeb');
 const store = require('./sessionStore');
 
 const THEMES = {
@@ -120,6 +121,7 @@ function start(opts) {
   chatgptWeb.setTui(true);
   claudeWeb.setTui(true);
   deepseekWeb.setTui(true);
+  aistudioWeb.setTui(true);
 
   let theme = 'opencode';
   let palette = THEMES[theme];
@@ -233,6 +235,7 @@ function start(opts) {
     { id: 'claude-web', label: 'Claude web — gratis, shell' },
     { id: 'deepseek-web', label: 'DeepSeek web — gratis, shell' },
     { id: 'gemini-api', label: 'Gemini API — hydrogen, thinking high (API key)' },
+    { id: 'aistudio-web', label: 'AI Studio web — hydrogen high (login Google)' },
     { id: 'api', label: 'API OpenAI-compatible — butuh AI_API_KEY' },
   ];
   let providerPickerActive = false;
@@ -260,10 +263,12 @@ function start(opts) {
       claudeWeb.reset();
       deepseekWeb.reset();
       geminiApi.reset();
+      aistudioWeb.reset();
       notify(picked.id === 'chatgpt-web' ? 'provider = ChatGPT web — /login chatgpt bila belum login'
         : picked.id === 'claude-web' ? 'provider = Claude web — /login claude bila belum login'
         : picked.id === 'deepseek-web' ? 'provider = DeepSeek web — /login deepseek bila belum login'
         : picked.id === 'gemini-api' ? `provider = Gemini API (${cfg.geminiApiModel.replace(/^models\//, '')} / ${cfg.geminiThinkingLevel})`
+        : picked.id === 'aistudio-web' ? 'provider = AI Studio web (hydrogen / high)'
         : `provider = ${picked.id}`);
       drawHeader();
     }
@@ -315,7 +320,8 @@ function start(opts) {
         : cfg.provider === 'claude-web' ? 'Claude web'
           : cfg.provider === 'deepseek-web' ? 'DeepSeek web'
             : cfg.provider === 'gemini-api' ? `Gemini API (${cfg.geminiApiModel.replace(/^models\//, '')} / ${cfg.geminiThinkingLevel})`
-              : `${cfg.model} @ ${cfg.baseUrl}`;
+              : cfg.provider === 'aistudio-web' ? 'AI Studio web (hydrogen / high)'
+                : `${cfg.model} @ ${cfg.baseUrl}`;
   }
 
   // inputOnFocus:true menambah listener keypress tiap focus() dipanggil.
@@ -484,6 +490,7 @@ function start(opts) {
         claudeWeb.reset();
         deepseekWeb.reset();
         geminiApi.reset();
+        aistudioWeb.reset();
         store.save(store.activeId(), []);
         showMessages([]);
         notify('sesi aktif dikosongkan — sesi lain tetap tersimpan');
@@ -492,6 +499,7 @@ function start(opts) {
         if (arg === 'chatgpt') notify(await chatgptWeb.openLogin());
         else if (arg === 'claude') notify(await claudeWeb.openLogin());
         else if (arg === 'deepseek') notify(await deepseekWeb.openLogin());
+        else if (arg === 'aistudio') notify(await aistudioWeb.openLogin());
         else notify(await sess.start());
         await refreshSession();
         break;
@@ -527,7 +535,7 @@ function start(opts) {
         break;
       case 'provider':
         if (!arg) showProviderPicker();
-        else if (!['gemini-web', 'chatgpt-web', 'claude-web', 'deepseek-web', 'gemini-api', 'api'].includes(arg)) notify('pakai: /provider gemini-web|chatgpt-web|claude-web|deepseek-web|gemini-api|api');
+        else if (!['gemini-web', 'chatgpt-web', 'claude-web', 'deepseek-web', 'gemini-api', 'aistudio-web', 'api'].includes(arg)) notify('pakai: /provider gemini-web|chatgpt-web|claude-web|deepseek-web|gemini-api|aistudio-web|api');
         else {
           cfg.provider = arg;
           geminiWeb.reset();
@@ -535,6 +543,7 @@ function start(opts) {
           claudeWeb.reset();
           deepseekWeb.reset();
           geminiApi.reset();
+          aistudioWeb.reset();
           notify(arg === 'chatgpt-web' ? 'provider = chatgpt-web — jalankan /login chatgpt bila belum login' : `provider = ${arg}`);
           drawHeader();
         }

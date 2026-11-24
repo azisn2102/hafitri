@@ -71,7 +71,12 @@ bersamaan dengan function calling — riset web memakai tool `web_search`/`web_f
 Ganti lewat `GEMINI_API_MODEL`, `GEMINI_THINKING_LEVEL`,
 `GEMINI_MAX_OUTPUT_TOKENS`. Pakai: `hafitri --gemini-api "tugas"`.
 
-Di TUI: `/provider` membuka picker provider (Gemini / ChatGPT / Claude / DeepSeek / Gemini API / API; ↑↓ + Enter, ESC batal), lalu `/login chatgpt`
+**AI Studio web** (`aistudio-web`) memakai login Google di noVNC, tanpa API key:
+`hafitri --aistudio-login` (bila perlu) lalu `hafitri --aistudio "tugas"`. Default model
+`gemini-4-hydrogen` Thinking `High`; tool Grounding Google Search otomatis dimatikan karena sering
+`Permission denied` di project free. Aksi shell memakai bridge `PERINTAH: <cmd>` seperti provider web lain.
+
+Di TUI: `/provider` membuka picker provider (Gemini / ChatGPT / Claude / DeepSeek / Gemini API / AI Studio / API; ↑↓ + Enter, ESC batal), lalu `/login chatgpt`
 bila belum login. Generate gambar di ChatGPT memakai tombol **Add files and more → Create image**;
 gambar aslinya disimpan otomatis.
 Karena ChatGPT web tidak mengekspos tool call, aksi shell diminta dalam format polos `PERINTAH: <cmd>`

@@ -33,6 +33,7 @@ const cfg = {
   chatgptUrl: process.env.CHATGPT_URL || 'https://chatgpt.com/',
   claudeUrl: process.env.CLAUDE_URL || 'https://claude.ai/',
   deepseekUrl: process.env.DEEPSEEK_URL || 'https://chat.deepseek.com/',
+  aistudioUrl: process.env.AISTUDIO_URL || 'https://aistudio.google.com/prompts/new_chat',
   maxSteps: parseInt(process.env.MAX_STEPS || '24', 10) || 24,
   browserBin: process.env.BROWSER_BIN || '',
   display: process.env.BROWSER_DISPLAY || ':99',
