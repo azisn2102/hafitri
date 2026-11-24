@@ -79,20 +79,23 @@ function wrapText(text, width) {
 }
 
 function tag(palette, text) {
+  // Blessed tidak menerima {33-fg} di dalam string dinamis yang belum di-parse.
+  // Gunakan ANSI langsung.
+  const esc = (n) => `\x1b[38;5;${n}m`;
+  const reset = '\x1b[39m';
   return text
-    .replace(/\{A\}/g, `{${palette.accent}-fg}`)
-    .replace(/\{M\}/g, `{${palette.muted}-fg}`)
-    .replace(/\{T\}/g, `{${palette.tool}-fg}`)
-    .replace(/\{U\}/g, `{${palette.user}-fg}`)
-    .replace(/\{E\}/g, `{${palette.error}-fg}`)
-    .replace(/\{K\}/g, `{${palette.ok}-fg}`)
-    .replace(/\{A\}/g, `{${palette.accent}-fg}`)
-    .replace(/\{\/A\}/g, `{/${palette.accent}-fg}`)
-    .replace(/\{\/M\}/g, `{/${palette.muted}-fg}`)
-    .replace(/\{\/T\}/g, `{/${palette.tool}-fg}`)
-    .replace(/\{\/U\}/g, `{/${palette.user}-fg}`)
-    .replace(/\{\/E\}/g, `{/${palette.error}-fg}`)
-    .replace(/\{\/K\}/g, `{/${palette.ok}-fg}`);
+    .replace(/\{\/A\}/g, reset)
+    .replace(/\{\/M\}/g, reset)
+    .replace(/\{\/T\}/g, reset)
+    .replace(/\{\/U\}/g, reset)
+    .replace(/\{\/E\}/g, reset)
+    .replace(/\{\/K\}/g, reset)
+    .replace(/\{A\}/g, esc(palette.accent))
+    .replace(/\{M\}/g, esc(palette.muted))
+    .replace(/\{T\}/g, esc(palette.tool))
+    .replace(/\{U\}/g, esc(palette.user))
+    .replace(/\{E\}/g, esc(palette.error))
+    .replace(/\{K\}/g, esc(palette.ok));
 }
 
 function linkify(line, palette) {
