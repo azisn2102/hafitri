@@ -102,6 +102,9 @@ const HELP = [
   '/history           info riwayat tersimpan',
   '/login             start sesi noVNC + URL login',
   '/login chatgpt     buka chatgpt.com di noVNC untuk login',
+  '/login claude      buka claude.ai di noVNC untuk login',
+  '/login deepseek    buka chat.deepseek.com di noVNC untuk login',
+  '/login aistudio    buka AI Studio di noVNC untuk login',
   '/session start     start browser + noVNC',
   '/session stop      matikan sesi browser',
   '/session status    cek status sesi',
@@ -182,6 +185,17 @@ function start(opts) {
     },
   });
 
+  const helpPicker = blessed.list({
+    top: 3, left: 2, width: '86%', height: '70%',
+    label: ' BANTUAN — ↑↓ navigasi, ESC tutup ', border: { type: 'round' },
+    hidden: true, keys: true, mouse: true, vi: false,
+    style: {
+      fg: palette.text, bg: palette.panel,
+      border: { fg: palette.accent }, label: { fg: palette.accent, bold: true },
+      selected: { fg: palette.text, bg: palette.accent },
+    },
+  });
+
   screen.append(header);
   screen.append(log);
   screen.append(status);
@@ -189,6 +203,7 @@ function start(opts) {
   screen.append(notice);
   screen.append(picker);
   screen.append(providerPicker);
+  screen.append(helpPicker);
 
   let noticeTimer = null;
   function notify(text, ms = 8000) {
@@ -239,6 +254,7 @@ function start(opts) {
     { id: 'api', label: 'API OpenAI-compatible — butuh AI_API_KEY' },
   ];
   let providerPickerActive = false;
+  let helpPickerActive = false;
   function showProviderPicker() {
     const current = cfg.provider;
     providerPicker.setItems(PROVIDERS.map((p) => `${p.id === current ? '*' : ' '} ${p.label}`));
@@ -272,6 +288,21 @@ function start(opts) {
         : `provider = ${picked.id}`);
       drawHeader();
     }
+  }
+
+  function showHelpPicker() {
+    helpPicker.setItems(HELP.map((line, i) => `${String(i + 1).padStart(2, ' ')}. ${line}`));
+    helpPicker.select(0);
+    helpPicker.show();
+    helpPickerActive = true;
+    screen.render();
+  }
+
+  function closeHelpPicker() {
+    helpPickerActive = false;
+    helpPicker.hide();
+    focusInput();
+    screen.render();
   }
 
   let messages = null;
@@ -346,6 +377,9 @@ function start(opts) {
     providerPicker.style.fg = palette.text; providerPicker.style.bg = palette.panel;
     providerPicker.style.border.fg = palette.accent; providerPicker.style.label.fg = palette.accent;
     providerPicker.style.selected.fg = palette.text; providerPicker.style.selected.bg = palette.accent;
+    helpPicker.style.fg = palette.text; helpPicker.style.bg = palette.panel;
+    helpPicker.style.border.fg = palette.accent; helpPicker.style.label.fg = palette.accent;
+    helpPicker.style.selected.fg = palette.text; helpPicker.style.selected.bg = palette.accent;
     log.options.scrollbar.style.bg = palette.bg;
     log.options.scrollbar.style.fg = palette.accent;
     log.options.scrollbar.track.style.fg = palette.border;
@@ -452,7 +486,7 @@ function start(opts) {
         process.exit(0);
         break;
       case 'help':
-        notify(HELP.join('\n'));
+        showHelpPicker();
         break;
       case 'theme':
         if (arg && applyTheme(arg)) notify(`tema: ${arg}`);
@@ -614,6 +648,16 @@ function start(opts) {
   // ESC menutup panel INFO. Jangan biarkan textbox menganggap ESC sebagai "cancel input".
   input.on('keypress', (ch, key) => {
     if (!key) return;
+    if (helpPickerActive) {
+      // Panel bantuan permanen: ↑↓ untuk navigasi, hanya ESC yang menutup.
+      if (key.name === 'up') helpPicker.up();
+      else if (key.name === 'down') helpPicker.down();
+      else if (key.name === 'escape') closeHelpPicker();
+      else return;
+      key.name = '';
+      screen.render();
+      return;
+    }
     if (providerPickerActive) {
       if (key.name === 'up') providerPicker.up();
       else if (key.name === 'down') providerPicker.down();
