@@ -24,7 +24,8 @@ function setTui(on) { tuiMode = !!on; }
 
 // Di akun ini opsi cepat bernama "Bantuan sehari-hari/Hydrogen" (sering macet),
 // jadi "flash" dipetakan ke "Otomatis" yang otomatis memilih model cepat.
-const GEMINI_SYSTEM = `Kamu adalah hafitri, agent CLI lokal untuk otomasi, coding, dan riset web. Bila ditanya siapa kamu, jawab persis: "Aku hafitri, agent CLI lokal yang membantu otomasi tugas, coding, dan riset web." Jangan bilang kamu asisten AI, model bahasa, atau chatbot.
+const GEMINI_SYSTEM = `Kamu adalah hafitri, agent CLI lokal untuk otomasi, coding, dan riset web. Bila ditanya siapa kamu, atau ditanya apakah kamu hafitri, jawab PERSIS: "Aku hafitri, agent CLI lokal yang membantu otomasi tugas, coding, dan riset web."
+DILARANG menyangkal identitas hafitri, DILARANG menyebut Gemini, Google, model bahasa, asisten AI, chatbot, atau "saya adalah agent CLI lokal" tanpa nama hafitri.
 Untuk tugas shell, file, web, dan browser, HANYA pakai tool yang tercantum di daftar "TOOL YANG TERSEDIA". Jangan mengarang nama tool seperti google:image_gen — itu bukan tool hafitri.
 KECUALI untuk permintaan gambar/foto/ilustrasi: pakai kemampuan bawaanmu untuk membuat gambar LANGSUNG. Jangan tulis TOOL_CALL, jangan bilang "tool tidak tersedia", dan jangan memberi instruksi manual — cukup buat gambarnya. Sistem hafitri otomatis menyimpan gambar yang kamu hasilkan ke path yang diminta user.
 Bila user meminta menjalankan perintah, cek versi, install/update, buka web, atau baca/tulis file, WAJIB balas HANYA satu baris dengan pembungkus "arguments":
@@ -238,15 +239,26 @@ async function applyReasoning() {
 }
 
 function clean(text) {
-  return text
+  const BAKU = 'Aku hafitri, agent CLI lokal yang membantu otomasi tugas, coding, dan riset web.';
+  let out = String(text || '')
     .replace(/Gemini adalah AI dan dapat membuat kesalahan\.?/i, '')
     .replace(/Gemini can make mistakes[^\n]*/i, '')
+    .trim();
+  // Kalau model menyangkal identitas atau mengaku model lain, paksa jawaban baku.
+  const identityClaim = /^(Saya|Aku|Halo[!, ]+saya)\b/i.test(out)
+    && /(bukan\s+hafitri|bukan\s+fina|Fina Hafitri|Gemini|Google|model bahasa|asisten AI|chatbot|model AI|dibuat oleh|dikembangkan oleh)/i.test(out);
+  const askedWho = /\b(siapa kamu|apakah kamu hafitri|kamu siapa|kamu hafitri)\b/i.test(out);
+  if (identityClaim || (askedWho && !/^Aku hafitri\b/i.test(out))) return BAKU;
+  out = out
     .replace(/Saya adalah hafitri/gi, 'Aku hafitri')
     .replace(/Saya hafitri/gi, 'Aku hafitri')
     .replace(/\basisten AI\b/gi, 'agent CLI lokal')
-    .replace(/Sebagai model bahasa[^.]*\./i, 'Aku hafitri, agent CLI lokal yang bisa menjalankan tool.')
-    .replace(/Saya hanya (sebuah )?model bahasa[^.]*\./i, 'Aku hafitri, agent CLI lokal yang bisa menjalankan tool.')
+    .replace(/Sebagai model bahasa[^.]*\./i, BAKU)
+    .replace(/Saya hanya (sebuah )?model bahasa[^.]*\./i, BAKU)
     .trim();
+  // Pasca-replace masih menyebut identitas lain
+  if (/^(Saya|Aku)\s+hafitri\b/i.test(out) && /(Gemini|Google|model AI|dibuat oleh)/i.test(out)) return BAKU;
+  return out;
 }
 
 async function waitResponse(timeoutMs = 120000, beforeImage = '') {
