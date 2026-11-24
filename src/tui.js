@@ -186,8 +186,9 @@ function start(opts) {
     tags: true, wrap: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
     padding: { left: 1, right: 1 },
     scrollbar: {
-      ch: '▐', track: { ch: ' ' },
-      style: { fg: palette.accent, bg: palette.bg },
+      ch: ' ',
+      style: { bg: palette.accent },
+      track: { style: { bg: palette.panel } },
     },
     style: { fg: palette.text, bg: palette.bg, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },
   });
@@ -508,10 +509,8 @@ function start(opts) {
     helpPicker.style.fg = palette.text; helpPicker.style.bg = palette.panel;
     helpPicker.style.border.fg = palette.accent; helpPicker.style.label.fg = palette.accent;
     helpPicker.style.selected.fg = palette.text; helpPicker.style.selected.bg = palette.accent;
-    log.options.scrollbar.style.bg = palette.bg;
-    log.options.scrollbar.style.fg = palette.accent;
-    log.options.scrollbar.track.style.fg = palette.border;
-    log.options.scrollbar.track.style.bg = palette.bg;
+    log.options.scrollbar.style.bg = palette.accent;
+    log.options.scrollbar.track.style.bg = palette.panel;
     drawHeader();
     renderLog();
     return true;
