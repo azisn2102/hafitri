@@ -249,7 +249,7 @@ function clean(text) {
     .trim();
 }
 
-async function waitResponse(timeoutMs = 120000) {
+async function waitResponse(timeoutMs = 120000, beforeImage = '') {
   const t0 = Date.now();
   let last = '';
   let stable = 0;
@@ -270,8 +270,8 @@ async function waitResponse(timeoutMs = 120000) {
     if (sig && sig === last) stable++;
     else { last = sig; stable = 0; }
     if (!state.busy && last && stable >= 2) {
-      // Kalau ada gambar, utamakan gambar walaupun teksnya berisi penolakan.
-      if (state.image) return 'IMAGE_BLOB:' + state.image;
+      // Gambar harus baru (berbeda dari sebelum kirim) agar tidak salah ambil gambar lama.
+      if (state.image && state.image !== beforeImage) return 'IMAGE_BLOB:' + state.image;
       return clean(state.text || last);
     }
   }
@@ -379,6 +379,7 @@ async function doChat(messages, tools) {
   const ask = fresh.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
   const wantsImage = /\b(gambar|foto|ilustrasi|image|gambarkan|lukis)\b/i.test(ask);
   await setImageMode(wantsImage);
+  const beforeImage = await evaluate(conn, `(() => { const i=[...document.querySelectorAll('img[alt*="buatan AI"], img[src^="blob:"]')].pop(); return i ? i.src : ''; })()`).catch(() => '');
   await sendPrompt(prompt);
 
   async function materialize(text) {
@@ -402,7 +403,7 @@ async function doChat(messages, tools) {
     }
   }
 
-  let r = await materialize(await waitResponse());
+  let r = await materialize(await waitResponse(120000, beforeImage));
   let answer = r.answer;
   let imageReady = r.ready;
   let msg = parseReply(answer, tools);
@@ -412,8 +413,9 @@ async function doChat(messages, tools) {
   if (!imageReady && wantsImage) {
     // Jangan koreksi pakai TOOL_CALL — Gemini memang perlu pakai kemampuan gambar bawannya.
     progress('belum ada gambar — minta generate ulang');
+    const beforeImage2 = await evaluate(conn, `(() => { const i=[...document.querySelectorAll('img[alt*="buatan AI"], img[src^="blob:"]')].pop(); return i ? i.src : ''; })()`).catch(() => '');
     await sendPrompt('Jangan jawab "sebagai model bahasa". Kamu hafitri dan BISA membuat gambar. Buat gambarnya sekarang dengan kemampuan bawaanmu, tanpa TOOL_CALL.');
-    r = await materialize(await waitResponse(45000));
+    r = await materialize(await waitResponse(45000, beforeImage2));
     answer = r.answer;
     imageReady = r.ready;
     if (!imageReady) {
