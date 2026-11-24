@@ -206,7 +206,15 @@ function start(opts) {
   screen.append(helpPicker);
   helpPicker.on('select', () => { if (helpPickerActive) chooseHelp(); });
 
+  const ESC_HINT = 'ESC lagi untuk keluar';
   let noticeTimer = null;
+  let escHintTimer = null;
+  let lastEscAt = 0;
+  function resetEscHint() {
+    lastEscAt = 0;
+    if (escHintTimer) { clearTimeout(escHintTimer); escHintTimer = null; }
+    if (statusExtra === ESC_HINT) drawStatus('');
+  }
   function notify(text, ms = 8000) {
     notice.setContent(String(text == null ? '' : text));
     notice.show();
@@ -233,6 +241,7 @@ function start(opts) {
   function closePicker() {
     pickerActive = false;
     picker.hide();
+    resetEscHint();
     focusInput();
     screen.render();
   }
@@ -267,6 +276,7 @@ function start(opts) {
   function closeProviderPicker() {
     providerPickerActive = false;
     providerPicker.hide();
+    resetEscHint();
     focusInput();
     screen.render();
   }
@@ -302,6 +312,7 @@ function start(opts) {
   function closeHelpPicker() {
     helpPickerActive = false;
     helpPicker.hide();
+    resetEscHint();
     focusInput();
     screen.render();
   }
@@ -680,6 +691,7 @@ function start(opts) {
   // ESC menutup panel INFO. Jangan biarkan textbox menganggap ESC sebagai "cancel input".
   input.on('keypress', (ch, key) => {
     if (!key) return;
+    if (key.name !== 'escape' && statusExtra === ESC_HINT) resetEscHint();
     if (helpPickerActive) {
       // Panel bantuan permanen: ↑↓ navigasi, Enter pilih, ESC tutup.
       if (key.name === 'up') helpPicker.up();
@@ -731,7 +743,32 @@ function start(opts) {
     }
     if (key.name === 'escape') {
       key.name = '';
-      if (!notice.hidden) { notice.hide(); screen.render(); }
+      if (!notice.hidden) {
+        notice.hide();
+        resetEscHint();
+        screen.render();
+        focusInput();
+        return;
+      }
+      const typed = (input.getValue() || '').trim();
+      if (typed) {
+        input.setValue('');
+        resetEscHint();
+        screen.render();
+        focusInput();
+        return;
+      }
+      const now = Date.now();
+      if (now - lastEscAt < 1200) {
+        screen.destroy();
+        process.exit(0);
+      }
+      lastEscAt = now;
+      drawStatus(ESC_HINT);
+      if (escHintTimer) clearTimeout(escHintTimer);
+      escHintTimer = setTimeout(() => {
+        if (statusExtra === ESC_HINT) drawStatus('');
+      }, 1500);
       focusInput();
     }
   });
