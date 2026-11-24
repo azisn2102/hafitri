@@ -276,11 +276,11 @@ async function doChat(messages, tools) {
   const beforeText1 = await lastReplyText();
   const beforeImage1 = await lastImageSrc();
   await sendPrompt(prompt);
-  try {
-    await sleep(1200);
+  for (let i = 0; i < 10 && !chatUrl; i++) {
+    await sleep(600);
     const cur = await evaluate('location.href').catch(() => '');
-    if (/chatgpt\.com\/c\/[a-zA-Z0-9_-]+/.test(cur || '')) chatUrl = cur;
-  } catch { /* abaikan */ }
+    if (/chatgpt\.com\/c\/[a-zA-Z0-9_-]+/.test(cur || '')) { chatUrl = cur; break; }
+  }
   let reply = await waitResponse(120000, beforeText1, beforeImage1);
   if (reply.startsWith('IMAGE_BLOB:')) {
     progress('gambar terdeteksi — menyimpan...');

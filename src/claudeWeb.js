@@ -278,7 +278,11 @@ async function doChat(messages, tools) {
   const prompt = buildPrompt(messages, fresh, tools);
   const beforeText1 = await lastReplyText();
   await sendPrompt(prompt);
-  try { await sleep(1200); const cur = await evaluate('location.href').catch(() => ''); if (/claude\.ai\/chat\/[a-zA-Z0-9_-]+/.test(cur || '')) chatUrl = cur; } catch { /* abaikan */ }
+  for (let i = 0; i < 10 && !chatUrl; i++) {
+    await sleep(600);
+    const cur = await evaluate('location.href').catch(() => '');
+    if (/claude\.ai\/chat\/[a-zA-Z0-9_-]+/.test(cur || '')) { chatUrl = cur; break; }
+  }
   const reply = await waitResponse(120000, beforeText1, '');
   let msg = parseReply(reply, tools);
   const wantsAction = /\b(jalankan|eksekusi|install|update|apt|npm|git|curl|node|ls|hapus|tulis|unduh|buka|cek)\b/i.test(ask);

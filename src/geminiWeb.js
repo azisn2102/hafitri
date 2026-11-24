@@ -413,11 +413,11 @@ async function doChat(messages, tools) {
   const beforeImage = await evaluate(conn, `(() => { const i=[...document.querySelectorAll('img[alt*="buatan AI"], img[src^="blob:"]')].pop(); return i ? i.src : ''; })()`).catch(() => '');
   await sendPrompt(prompt);
   // Tangkap URL /app/<id> setelah pesan terkirim agar sesi ini bisa dilanjutkan nanti.
-  try {
-    await sleep(1200);
+  for (let i = 0; i < 10 && !chatUrl; i++) {
+    await sleep(600);
     const cur = await evaluate(conn, 'location.href').catch(() => '');
-    if (/gemini\.google\.com\/app\/[a-zA-Z0-9_-]+/.test(cur || '')) chatUrl = cur;
-  } catch { /* abaikan */ }
+    if (/gemini\.google\.com\/app\/[a-zA-Z0-9_-]+/.test(cur || '')) { chatUrl = cur; break; }
+  }
 
   async function materialize(text) {
     if (!text.startsWith('IMAGE_BLOB:')) return { answer: text, ready: false };
