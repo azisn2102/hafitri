@@ -274,6 +274,7 @@ function start(opts) {
   function showPicker() {
     const rows = store.list();
     if (!rows.length) return notify('belum ada sesi tersimpan');
+    picker.setLabel(' PILIH SESI — ↑↓ Enter, Ctrl+D×2 hapus, ESC batal ');
     picker.setItems(rows.map((s, i) => {
       const mark = s.id === store.activeId() ? '*' : ' ';
       return `${mark} [${i + 1}] ${s.title} | ${s.count} pesan | ${new Date(s.updatedAt).toLocaleString('id-ID')}`;
@@ -281,23 +282,61 @@ function start(opts) {
     picker.select(0);
     picker.show();
     pickerActive = true;
+    pickerDelAt = 0;
     screen.render();
   }
 
   function closePicker() {
     pickerActive = false;
     picker.hide();
+    pickerDelAt = 0;
     resetEscHint();
     focusInput();
     screen.render();
   }
 
   let pickerActive = false;
+  let pickerDelAt = 0;
   function choosePicker() {
     const rows = store.list();
     const index = picker.selected;
     closePicker();
     if (rows[index]) loadSession(rows[index].id);
+  }
+
+  function deletePickerSession() {
+    const rows = store.list();
+    const index = picker.selected;
+    const target = rows[index];
+    if (!target) return;
+    store.remove(target.id);
+    const next = store.list();
+    if (!next.length) {
+      closePicker();
+      messages = null;
+      showMessages([]);
+      drawHeader();
+      notify('sesi dihapus — tidak ada sesi tersisa');
+      return;
+    }
+    // Jika sesi aktif dihapus, store.remove sudah memilih sesi aktif baru.
+    const active = store.activeId();
+    if (target.id === active || !active) {
+      // aktif sudah pindah otomatis oleh store.remove
+    }
+    if (messages && messages.length && !store.load(store.activeId())) {
+      messages = null;
+      showMessages([]);
+    }
+    // Kalau sesi yang sedang dibuka dihapus, muat sesi aktif baru.
+    if (target.id === (messages ? store.activeId() : null) || target.id === store.activeId()) {
+      loadSession(store.activeId());
+    }
+    showPicker();
+    const idx = Math.min(index, next.length - 1);
+    picker.select(idx);
+    notify('sesi dihapus');
+    screen.render();
   }
 
   const PROVIDERS = [
@@ -776,6 +815,16 @@ function start(opts) {
       else if (key.name === 'down') picker.down();
       else if (key.name === 'enter') choosePicker();
       else if (key.name === 'escape') closePicker();
+      else if (key.ctrl && key.name === 'd') {
+        const now = Date.now();
+        if (now - pickerDelAt < 1200) {
+          pickerDelAt = 0;
+          deletePickerSession();
+        } else {
+          pickerDelAt = now;
+          notify('Tekan Ctrl+D sekali lagi untuk menghapus sesi ini', 1500);
+        }
+      }
       else return;
       key.name = '';
       screen.render();
@@ -832,7 +881,7 @@ function start(opts) {
   });
   input.key('C-c', () => { screen.destroy(); process.exit(0); });
   screen.key('C-c', () => { screen.destroy(); process.exit(0); });
-  screen.key('C-d', () => { screen.destroy(); process.exit(0); });
+  screen.key('C-d', () => { if (!pickerActive) { screen.destroy(); process.exit(0); } });
 
   drawHeader();
   applyTheme('opencode');
