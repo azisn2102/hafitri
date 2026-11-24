@@ -272,8 +272,10 @@ async function doChat(messages, tools) {
     progress('tool tidak valid / belum dipanggil — koreksi sekali');
     const beforeText2 = await lastReplyText();
     const beforeImage2 = await lastImageSrc();
-    const guess = ask.match(/(?:(?:jalankan|eksekusi|run|bantu|tolong)\s+(?:perintah\s+)?)?((?:apt|npm|git|curl|node|ls|echo|pwd|uname|df|free|uptime)\b[^\n.!?]*)/i);
-    const wanted = guess ? guess[1].trim() : 'node -v';
+    const guess = ask.match(/(?:apt|npm|git|curl|node|ls|echo|pwd|uname|df|free|uptime)\b[^,;\n.!?]*/i);
+    const wanted = guess
+      ? guess[0].trim().replace(/\s+(lalu|dan|kemudian|berikan|hasilnya|then|untuk)\b.*$/i, '').trim()
+      : 'node -v';
     await sendPrompt(`${note}\nTugas user: ${ask}\nTulis HANYA baris: PERINTAH: ${wanted}`);
     msg = parseReply(await waitResponse(45000, beforeText2, beforeImage2), tools);
   }

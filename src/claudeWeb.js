@@ -11,7 +11,7 @@ let sentCount = 0;
 let queue = Promise.resolve();
 let tuiMode = false;
 
-const EDITOR = `document.querySelector('textarea[placeholder], [contenteditable="true"][role="textbox"], div[contenteditable="true"]')`;
+const EDITOR = `document.querySelector('[role="textbox"][aria-label="Write your prompt to Claude"], div.tiptap[contenteditable="true"], textarea[placeholder], div[contenteditable="true"]')`;
 
 function progress(msg) { if (!tuiMode) console.error('[claude] ' + msg); }
 function setTui(on) { tuiMode = !!on; }
@@ -91,9 +91,10 @@ async function sendPrompt(text) {
     const el = ${EDITOR};
     if (!el) return false;
     el.focus();
+    // Pilih SEMUA isi composer: prompt berikutnya harus mengganti sisa teks lama,
+    // bukan menempel di tengah (ProseMirror sering menyimpan sisa input setelah kirim).
     const r = document.createRange();
     r.selectNodeContents(el);
-    r.collapse(false);
     const s = window.getSelection();
     s.removeAllRanges();
     s.addRange(r);
@@ -101,20 +102,27 @@ async function sendPrompt(text) {
   })()`);
   if (!ok) throw new Error('Kolom input Claude tidak ditemukan. Buka noVNC + /login claude lalu login manual.');
   await conn.send('Input.insertText', { text });
-  await sleep(600);
-  const sent = await evaluate(`(() => {
-    const b = document.querySelector('button[data-testid="send-button"]')
-      || [...document.querySelectorAll('button')].find(e => /^(Send|Send message|Send prompt|Kirim)$/i.test((e.getAttribute('aria-label') || '').trim()));
-    if (!b || b.disabled) return false;
-    b.click();
-    return true;
-  })()`);
+  await sleep(400);
+  let sent = false;
+  for (let i = 0; i < 30 && !sent; i++) {
+    sent = await evaluate(`(() => {
+      const b = document.querySelector('button[data-testid="send-button"]')
+        || [...document.querySelectorAll('button')].find(e => /^(Send|Send message|Send prompt|Kirim)$/i.test((e.getAttribute('aria-label') || '').trim()));
+      if (!b || b.disabled) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!sent) await sleep(300);
+  }
   if (!sent) throw new Error('Tombol kirim Claude tidak ditemukan / masih disabled');
 }
 
 /** Parser format polos Claude: TOOL_CALL <nama> key="nilai" key2=nilai2 */
 function parseReply(text, tools) {
-  const raw = String(text == null ? '' : text);
+  const raw = String(text == null ? '' : text)
+    .replace(/```[a-z]*\s*/gi, '')
+    .replace(/[\uE000-\uF8FF\u200B-\u200D\uFEFF]/g, '')
+    .trim();
   const allowed = new Set((tools || []).map((t) => t.function && t.function.name).filter(Boolean));
   const perintah = raw.match(/^\s*PERINTAH:\s*(.+)$/im);
   if (perintah && perintah[1].trim()) {
@@ -203,7 +211,7 @@ function lastImageSrc() {
 
 function lastReplyText() {
   return evaluate(`(() => {
-    const els = [...document.querySelectorAll('[data-message-author-role="assistant"], [class*="DilResponseRoot"]')];
+    const els = [...document.querySelectorAll('.prose')];
     return els.length ? els[els.length - 1].innerText.trim() : '';
   })()`);
 }
@@ -215,14 +223,12 @@ async function waitResponse(timeoutMs = 120000, beforeText = '', beforeImage = '
     await sleep(800);
     if (!warned && Date.now() - t0 > 20000) { progress('masih menunggu respons Claude...'); warned = true; }
     const state = await evaluate(`(() => {
-      const els = [...document.querySelectorAll('[data-message-author-role="assistant"], [class*="DilResponseRoot"]')];
+      const els = [...document.querySelectorAll('.prose')];
       return {
-        busy: !!document.querySelector('button[data-testid="stop-button"], button[aria-label*="Stop generating"]'),
+        busy: /Claude is responding|Claude is thinking|Stop generating/i.test(document.body.innerText.slice(-600))
+          || !!document.querySelector('button[aria-label*="Stop generating"], button[data-testid="stop-button"]'),
         text: els.length ? els[els.length - 1].innerText.trim() : '',
-        image: (() => {
-          const im = [...document.querySelectorAll('img[alt*="Generated image"], img[src^="blob:"]')].pop();
-          return im ? im.src : '';
-        })(),
+        image: '',
       };
     })()`);
     const sig = (state && (state.image || state.text)) || '';
@@ -247,25 +253,10 @@ async function doChat(messages, tools) {
   if (!fresh.length) return { role: 'assistant', content: '(tidak ada pesan baru)' };
   const allowedNames = (tools || []).map((t) => t.function && t.function.name).filter(Boolean).join(', ');
   const ask = fresh.filter((m) => m.role === 'user').map((m) => m.content).join(' ');
-  const wantsImage = /\b(gambar|foto|ilustrasi|image|gambarkan|lukis)\b/i.test(ask);
-  if (wantsImage) await setImageMode();
-  const prompt = wantsImage ? ask : buildPrompt(messages, fresh, tools);
+  const prompt = buildPrompt(messages, fresh, tools);
   const beforeText1 = await lastReplyText();
-  const beforeImage1 = await lastImageSrc();
   await sendPrompt(prompt);
-  let reply = await waitResponse(120000, beforeText1, beforeImage1);
-  if (reply.startsWith('IMAGE_BLOB:')) {
-    progress('gambar terdeteksi — menyimpan...');
-    try {
-      const pathMatch = ask.match(/(?:simpan|save|taruh|letak)\w*\s+(?:gambar\s+)?(?:di\s+)?([^\s"']+\/[^\s"']*)/i);
-      const destDir = pathMatch && !/\.(png|jpe?g|webp)$/i.test(pathMatch[1]) ? pathMatch[1] : null;
-      const file = await saveImage(destDir);
-      reply = 'FINAL: Gambar berhasil dibuat dan disimpan di ' + file;
-    } catch (e) {
-      reply = 'FINAL: gambar dibuat Claude, tapi gagal disimpan: ' + e.message;
-    }
-    sentCount = 0; // chat berikutnya mulai bersih (tanpa mode Create image)
-  }
+  const reply = await waitResponse(120000, beforeText1, '');
   let msg = parseReply(reply, tools);
   const wantsAction = /\b(jalankan|eksekusi|install|update|apt|npm|git|curl|node|ls|hapus|tulis|unduh|buka|cek)\b/i.test(ask);
   if (msg.invalidTool || (!msg.tool_calls && wantsAction)) {
@@ -274,11 +265,12 @@ async function doChat(messages, tools) {
       : `Kamu adalah hafitri dan tool ${allowedNames} tersedia. Jangan bilang tool tidak tersedia dan jangan memberi instruksi manual.`;
     progress('tool tidak valid / belum dipanggil — koreksi sekali');
     const beforeText2 = await lastReplyText();
-    const beforeImage2 = await lastImageSrc();
-    const guess = ask.match(/(?:(?:jalankan|eksekusi|run|bantu|tolong)\s+(?:perintah\s+)?)?((?:apt|npm|git|curl|node|ls|echo|pwd|uname|df|free|uptime)\b[^\n.!?]*)/i);
-    const wanted = guess ? guess[1].trim() : 'node -v';
+    const guess = ask.match(/(?:apt|npm|git|curl|node|ls|echo|pwd|uname|df|free|uptime)\b[^,;\n.!?]*/i);
+    const wanted = guess
+      ? guess[0].trim().replace(/\s+(lalu|dan|kemudian|berikan|hasilnya|then|untuk)\b.*$/i, '').trim()
+      : 'node -v';
     await sendPrompt(`${note}\nTugas user: ${ask}\nTulis HANYA baris: PERINTAH: ${wanted}`);
-    msg = parseReply(await waitResponse(45000, beforeText2, beforeImage2), tools);
+    msg = parseReply(await waitResponse(45000, beforeText2, ''), tools);
   }
   if (msg.invalidTool) msg = { role: 'assistant', content: `Tool "${msg.invalidTool}" tidak tersedia. Tool yang bisa dipakai: ${allowedNames}.` };
   return msg;
