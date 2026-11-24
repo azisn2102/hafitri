@@ -188,7 +188,7 @@ function start(opts) {
   const helpPicker = blessed.list({
     top: 3, left: 2, width: '86%', height: '70%',
     label: ' BANTUAN — ↑↓ lalu Enter pilih, ESC tutup ', border: { type: 'round' },
-    hidden: true, keys: true, mouse: true, vi: false,
+    hidden: true, keys: false, mouse: true, vi: false,
     style: {
       fg: palette.text, bg: palette.panel,
       border: { fg: palette.accent }, label: { fg: palette.accent, bold: true },
@@ -204,6 +204,7 @@ function start(opts) {
   screen.append(picker);
   screen.append(providerPicker);
   screen.append(helpPicker);
+  helpPicker.on('select', () => { if (helpPickerActive) chooseHelp(); });
 
   let noticeTimer = null;
   function notify(text, ms = 8000) {
@@ -306,7 +307,13 @@ function start(opts) {
   }
 
   function chooseHelp() {
-    const raw = String(helpPicker.getItem(helpPicker.selected) || '')
+    // ritems berisi string asli; items[] berisi objek ListItem (String()-nya [object Object]).
+    let selected = (helpPicker.ritems || [])[helpPicker.selected];
+    if (selected == null) {
+      const item = helpPicker.getItem(helpPicker.selected);
+      selected = item && typeof item.getContent === 'function' ? item.getContent() : item;
+    }
+    const raw = String(selected == null ? '' : selected)
       .replace(/^\s*\d+\.\s*/, '');
     const match = raw.match(/^(\S+(?:\s+\S+)*?)\s{2,}/);
     const cmd = (match ? match[1] : raw.trim().split(/\s+/)[0] || '').trim();
