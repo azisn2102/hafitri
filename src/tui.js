@@ -78,17 +78,60 @@ function wrapText(text, width) {
   return out;
 }
 
-function linkify(line) {
+function tag(palette, text) {
+  return text
+    .replace(/\{A\}/g, `{${palette.accent}-fg}`)
+    .replace(/\{M\}/g, `{${palette.muted}-fg}`)
+    .replace(/\{T\}/g, `{${palette.tool}-fg}`)
+    .replace(/\{U\}/g, `{${palette.user}-fg}`)
+    .replace(/\{E\}/g, `{${palette.error}-fg}`)
+    .replace(/\{K\}/g, `{${palette.ok}-fg}`)
+    .replace(/\{A\}/g, `{${palette.accent}-fg}`)
+    .replace(/\{\/A\}/g, `{/${palette.accent}-fg}`)
+    .replace(/\{\/M\}/g, `{/${palette.muted}-fg}`)
+    .replace(/\{\/T\}/g, `{/${palette.tool}-fg}`)
+    .replace(/\{\/U\}/g, `{/${palette.user}-fg}`)
+    .replace(/\{\/E\}/g, `{/${palette.error}-fg}`)
+    .replace(/\{\/K\}/g, `{/${palette.ok}-fg}`);
+}
+
+function linkify(line, palette) {
+  const accent = palette ? `{${palette.accent}-fg}` : '{cyan-fg}';
+  const accentClose = palette ? `{/${palette.accent}-fg}` : '{/cyan-fg}';
+  const tool = palette ? `{${palette.tool}-fg}` : '{cyan-fg}';
+  const toolClose = palette ? `{/${palette.tool}-fg}` : '{/cyan-fg}';
   let out = String(line == null ? '' : line)
     .replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'))
     .replace(/\*\*([^*]+)\*\*/g, '{bold}$1{/bold}')
-    .replace(/`([^`]+)`/g, '{cyan-fg}$1{/cyan-fg}');
-  if (out.startsWith('│ ')) out = '{cyan-fg}' + out + '{/cyan-fg}';
+    .replace(/`([^`]+)`/g, tool + '$1' + toolClose);
+  if (out.startsWith('│ ')) out = tool + out + toolClose;
   return out.replace(/https?:\/\/[^\s<>"'()]+/gi, (url) => {
     const clean = url.replace(/[.,;:!?]+$/, '');
     const tail = url.slice(clean.length);
-    return `{underline}{cyan-fg}${clean}{/cyan-fg}{/underline}${tail}`;
+    return `{underline}${accent}${clean}${accentClose}{/underline}${tail}`;
   });
+}
+
+function renderMarkdownLine(line, palette) {
+  const tool = palette ? `{${palette.tool}-fg}` : '{cyan-fg}';
+  const toolClose = palette ? `{/${palette.tool}-fg}` : '{/cyan-fg}';
+  const muted = palette ? `{${palette.muted}-fg}` : '{#888-fg}';
+  const mutedClose = palette ? `{/${palette.muted}-fg}` : '{/#888-fg}';
+  let out = String(line == null ? '' : line)
+    .replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'))
+    .replace(/\*\*([^*]+)\*\*/g, '{bold}$1{/bold}')
+    .replace(/`([^`]+)`/g, tool + '$1' + toolClose);
+  if (/^###\s+/.test(out)) out = '{bold}' + out.replace(/^###\s+/, '') + '{/bold}';
+  else if (/^##\s+/.test(out)) out = '{bold}' + out.replace(/^##\s+/, '') + '{/bold}';
+  else if (/^#\s+/.test(out)) out = '{bold}' + out.replace(/^#\s+/, '') + '{/bold}';
+  if (/^\s*[-*]\s+/.test(out)) out = out.replace(/^(\s*)[-*]\s+/, '$1• ');
+  if (/^>\s?/.test(out)) out = muted + '│ ' + out.replace(/^>\s?/, '') + mutedClose;
+  if (out.startsWith('│ ')) out = tool + out + toolClose;
+  return out;
+}
+
+function mdBody(text, palette) {
+  return String(text == null ? '' : text).split('\n').map((l) => renderMarkdownLine(l, palette));
 }
 
 const HELP = [
@@ -434,14 +477,27 @@ function start(opts) {
 
   function drawHeader() {
     header.style.fg = palette.accent;
-    header.setContent(` ${palette.brand} {bold}hafitri{/bold}  ${'\u2502'}  ${providerLabel()}`);
+    header.setContent(tag(palette,
+      ` {A}{bold}${palette.brand} hafitri{/bold}{/A}  {M}│{/M}  {bold}${providerLabel()}{/bold}  {M}│{/M}  /help  {M}│{/M}  /provider  {M}│{/M}  ESC×2 keluar`
+    ));
     screen.render();
   }
 
   function drawStatus(extra) {
     if (extra !== undefined) statusExtra = extra;
-    const spin = busy ? `${SPIN[spinFrame]} berpikir...` : '✓ siap';
-    status.setContent(` ${spin}  ${'\u2502'}  sesi: ${sessionState}  ${'\u2502'}  tema: ${theme}  ${'\u2502'}  respons: ${latency}  ${'\u2502'}  ${statusExtra}`);
+    const spin = busy ? `${SPIN[spinFrame]} berpikir` : '✓ siap';
+    const parts = [
+      spin,
+      `sesi ${sessionState}`,
+      `tema ${theme}`,
+      `respons ${latency}`,
+    ];
+    if (statusExtra) parts.push(statusExtra);
+    const sep = tag(palette, `{M}  │  {/M}`);
+    status.setContent(' ' + parts.map((p, i) => {
+      if (i === 0) return busy ? tag(palette, `{A}${p}{/A}`) : tag(palette, `{K}${p}{/K}`);
+      return p === statusExtra ? tag(palette, `{U}${p}{/U}`) : tag(palette, `{M}${p}{/M}`);
+    }).join(sep));
     screen.render();
   }
 
@@ -462,32 +518,41 @@ function start(opts) {
 
   function renderLog() {
     const cols = screen.cols || log.width || 80;
-    const inner = Math.max(20, cols - 5);
+    const inner = Math.max(20, cols - 6);
     const maxIndent = cols < 60 ? 2 : 4;
-    const pad = cols < 60 ? 6 : 8;
     const out = [];
+    let turn = 0;
+
     for (const e of entries) {
       const mark = e.role === 'user' ? palette.userMark
         : e.role === 'agent' ? palette.agentMark
           : e.role === 'tool' ? palette.toolMark : '·';
       const label = e.role === 'user' ? 'ANDA'
         : e.role === 'agent' ? 'HAFITRI'
-          : e.role === 'tool' ? 'TOOL' : '';
+          : e.role === 'tool' ? 'TOOL' : 'INFO';
+      const c = e.role === 'user' ? 'U'
+        : e.role === 'agent' ? 'A'
+          : e.role === 'tool' ? 'T' : 'M';
       const body = prepare(e.text, maxIndent);
+
       if (e.role === 'plain') {
-        for (const line of wrapText(body, inner)) out.push(linkify(line));
+        out.push(tag(palette, `{M}${'·'.repeat(Math.min(inner, 32))}{/M}`));
+        for (const line of wrapText(body, inner)) out.push(linkify(line, palette));
+        out.push('');
         continue;
       }
-      const head = label ? `${mark} ${label.padEnd(pad)} ` : `${mark} `;
-      if (e.role === 'agent') out.push('─'.repeat(inner));
-      const lines = wrapText(body, Math.max(8, inner - head.length));
-      lines.forEach((line, i) => {
-        const pretty = i === 0 && e.role === 'agent' && lines.length > 1
-          && line.length < 60 && !/[.!?:]$/.test(line);
-        const text = pretty ? `{bold}{cyan-fg}${linkify(line)}{/cyan-fg}{/bold}` : linkify(line);
-        out.push((i === 0 ? head : ' '.repeat(head.length)) + text);
-      });
+
+      turn += 1;
+      const rule = '─'.repeat(Math.max(10, Math.min(inner, 70)));
+      out.push(tag(palette, `{M}┌${rule}{/M}`));
+      out.push(tag(palette, `{${c}}{bold}${mark} ${label}{/bold}{/${c}}  {M}#${turn}{/M}`));
+      for (const line of wrapText(body, Math.max(10, inner - 4))) {
+        out.push(tag(palette, `{M}│{/M} `) + linkify(line, palette));
+      }
+      out.push(tag(palette, `{M}└${rule}{/M}`));
+      out.push('');
     }
+
     log.setContent(out.join('\n'));
     log.scroll(1000);
     screen.render();
