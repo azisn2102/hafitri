@@ -63,14 +63,22 @@ Selain Gemini, tersedia **ChatGPT web** (`chatgpt-web`) — juga tanpa API key. 
 `hafitri --chatgpt-login` (membuka chatgpt.com di noVNC), login manual, lalu
 `hafitri --chatgpt "tugas"`. **Claude web** (`claude-web`) juga tersedia: `hafitri --claude-login` lalu `hafitri --claude "tugas"`.
 **DeepSeek web** (`deepseek-web`): `hafitri --deepseek-login` lalu `hafitri --deepseek "tugas"`.
-Di TUI: `/provider` membuka picker provider (Gemini / ChatGPT / Claude / DeepSeek / API; ↑↓ + Enter, ESC batal), lalu `/login chatgpt`
+
+**Gemini API** (`gemini-api`) memakai `GEMINI_API_KEY` di `.env` dan Interactions API `@google/genai`.
+Default: `models/gemini-4-hydrogen`, `thinking_level: high`, `max_output_tokens: 65536`, dengan semua
+tool hafitri (function calling). `google_search` bawaan tidak dipakai karena API tidak mengizinkannya
+bersamaan dengan function calling — riset web memakai tool `web_search`/`web_fetch`/`browser`.
+Ganti lewat `GEMINI_API_MODEL`, `GEMINI_THINKING_LEVEL`,
+`GEMINI_MAX_OUTPUT_TOKENS`. Pakai: `hafitri --gemini-api "tugas"`.
+
+Di TUI: `/provider` membuka picker provider (Gemini / ChatGPT / Claude / DeepSeek / Gemini API / API; ↑↓ + Enter, ESC batal), lalu `/login chatgpt`
 bila belum login. Generate gambar di ChatGPT memakai tombol **Add files and more → Create image**;
 gambar aslinya disimpan otomatis.
 Karena ChatGPT web tidak mengekspos tool call, aksi shell diminta dalam format polos `PERINTAH: <cmd>`
 lalu dijalankan hafitri; jawaban akhir tetap dirangkum ChatGPT. Untuk aksi file/web yang kompleks,
 Gemini web lebih lengkap.
 
-Paksa provider lewat flag: `hafitri --gemini "tugas"`, `hafitri --chatgpt "tugas"`, atau `hafitri --api "tugas"`.
+Paksa provider lewat flag: `hafitri --gemini "tugas"`, `hafitri --chatgpt "tugas"`, `hafitri --deepseek "tugas"`, `hafitri --gemini-api "tugas"`, atau `hafitri --api "tugas"`.
 Untuk provider `api`, wizard isi key muncul saat first run (tersimpan di `.env`, chmod 600).
 API yang didukung: semua endpoint `/chat/completions` OpenAI-compatible (OpenRouter, OpenAI, Groq, dll.).
 

@@ -9,6 +9,7 @@ const geminiWeb = require('./geminiWeb');
 const chatgptWeb = require('./chatgptWeb');
 const claudeWeb = require('./claudeWeb');
 const deepseekWeb = require('./deepseekWeb');
+const geminiApi = require('./geminiApi');
 const store = require('./sessionStore');
 
 const THEMES = {
@@ -231,6 +232,7 @@ function start(opts) {
     { id: 'chatgpt-web', label: 'ChatGPT web — gratis, shell + generate gambar' },
     { id: 'claude-web', label: 'Claude web — gratis, shell' },
     { id: 'deepseek-web', label: 'DeepSeek web — gratis, shell' },
+    { id: 'gemini-api', label: 'Gemini API — hydrogen, thinking high (API key)' },
     { id: 'api', label: 'API OpenAI-compatible — butuh AI_API_KEY' },
   ];
   let providerPickerActive = false;
@@ -257,9 +259,11 @@ function start(opts) {
       chatgptWeb.reset();
       claudeWeb.reset();
       deepseekWeb.reset();
+      geminiApi.reset();
       notify(picked.id === 'chatgpt-web' ? 'provider = ChatGPT web — /login chatgpt bila belum login'
         : picked.id === 'claude-web' ? 'provider = Claude web — /login claude bila belum login'
         : picked.id === 'deepseek-web' ? 'provider = DeepSeek web — /login deepseek bila belum login'
+        : picked.id === 'gemini-api' ? `provider = Gemini API (${cfg.geminiApiModel.replace(/^models\//, '')} / ${cfg.geminiThinkingLevel})`
         : `provider = ${picked.id}`);
       drawHeader();
     }
@@ -309,7 +313,9 @@ function start(opts) {
       ? `Gemini web (${cfg.geminiModel})`
       : cfg.provider === 'chatgpt-web' ? 'ChatGPT web'
         : cfg.provider === 'claude-web' ? 'Claude web'
-          : cfg.provider === 'deepseek-web' ? 'DeepSeek web' : `${cfg.model} @ ${cfg.baseUrl}`;
+          : cfg.provider === 'deepseek-web' ? 'DeepSeek web'
+            : cfg.provider === 'gemini-api' ? `Gemini API (${cfg.geminiApiModel.replace(/^models\//, '')} / ${cfg.geminiThinkingLevel})`
+              : `${cfg.model} @ ${cfg.baseUrl}`;
   }
 
   // inputOnFocus:true menambah listener keypress tiap focus() dipanggil.
@@ -477,6 +483,7 @@ function start(opts) {
         chatgptWeb.reset();
         claudeWeb.reset();
         deepseekWeb.reset();
+        geminiApi.reset();
         store.save(store.activeId(), []);
         showMessages([]);
         notify('sesi aktif dikosongkan — sesi lain tetap tersimpan');
@@ -520,13 +527,14 @@ function start(opts) {
         break;
       case 'provider':
         if (!arg) showProviderPicker();
-        else if (!['gemini-web', 'chatgpt-web', 'claude-web', 'deepseek-web', 'api'].includes(arg)) notify('pakai: /provider gemini-web|chatgpt-web|claude-web|deepseek-web|api');
+        else if (!['gemini-web', 'chatgpt-web', 'claude-web', 'deepseek-web', 'gemini-api', 'api'].includes(arg)) notify('pakai: /provider gemini-web|chatgpt-web|claude-web|deepseek-web|gemini-api|api');
         else {
           cfg.provider = arg;
           geminiWeb.reset();
           chatgptWeb.reset();
           claudeWeb.reset();
           deepseekWeb.reset();
+          geminiApi.reset();
           notify(arg === 'chatgpt-web' ? 'provider = chatgpt-web — jalankan /login chatgpt bila belum login' : `provider = ${arg}`);
           drawHeader();
         }
