@@ -842,7 +842,6 @@ function start(opts) {
   input.focus();
   screen.render();
   refreshSession();
-  append('plain', 'Halo. Ketik pesan untuk memulai percakapan, atau /help untuk daftar perintah.');
   return screen;
 }
 
