@@ -45,12 +45,24 @@ function tidy(text) {
     .trim();
 }
 
-/** Rapikan struktur sebelum di-wrap: indentasi, code fence, bullet. */
+function parseBlocks(text) {
+  const src = String(text == null ? '' : text).replace(/\r\n/g, '\n');
+  const re = /```([a-z0-9+_-]*)\n?([\s\S]*?)```/gi;
+  const blocks = [];
+  let last = 0, m;
+  while ((m = re.exec(src))) {
+    if (m.index > last) blocks.push({ type: 'text', content: src.slice(last, m.index) });
+    blocks.push({ type: 'code', lang: (m[1] || '').trim(), content: m[2].replace(/\n$/, '') });
+    last = re.lastIndex;
+  }
+  if (last < src.length) blocks.push({ type: 'text', content: src.slice(last) });
+  return blocks.length ? blocks : [{ type: 'text', content: src }];
+}
+
+/** Rapikan struktur teks biasa (bukan code fence). */
 function prepare(text, maxIndent) {
   return tidy(text)
     .replace(/^ {5,}/gm, ' '.repeat(maxIndent))
-    .replace(/```[a-z0-9+_-]*\n([\s\S]*?)```/gi, (_, code) =>
-      String(code).replace(/\n$/, '').split('\n').map((l) => '│ ' + l).join('\n'))
     .replace(/^\s*[-*+]\s+/gm, '• ')
     .replace(/^#{1,6}\s+/gm, '');
 }
@@ -134,8 +146,34 @@ function renderMarkdownLine(line, palette) {
   return out;
 }
 
-function mdBody(text, palette) {
-  return String(text == null ? '' : text).split('\n').map((l) => renderMarkdownLine(l, palette));
+function renderCodeBlock(block, width, palette) {
+  const esc = (n) => `\x1b[38;5;${n}m`;
+  const reset = '\x1b[39m';
+  const dim = esc(palette.muted);
+  const accent = esc(palette.tool);
+  const lang = block.lang ? ` ${block.lang} ` : ' code ';
+  const inner = Math.max(10, width - 2);
+  const top = dim + '┌' + '─' + accent + lang + dim + '─'.repeat(Math.max(0, inner - lang.length - 2)) + '┐' + reset;
+  const bot = dim + '└' + '─'.repeat(Math.max(0, inner)) + '┘' + reset;
+  const lines = [top];
+  for (const raw of String(block.content || '').split('\n')) {
+    const safe = raw.replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'));
+    const chunks = wrapText(safe, Math.max(8, inner - 2));
+    for (const ch of chunks) lines.push(dim + '│ ' + reset + ch);
+  }
+  lines.push(bot);
+  return lines;
+}
+
+function mdBody(text, width, palette) {
+  const blocks = parseBlocks(String(text == null ? '' : text));
+  const out = [];
+  for (const b of blocks) {
+    if (b.type === 'code') { out.push(...renderCodeBlock(b, width, palette)); continue; }
+    const prepared = prepare(b.content, 4);
+    for (const line of wrapText(prepared, Math.max(10, width - 2))) out.push('  ' + linkify(renderMarkdownLine(line, palette), palette));
+  }
+  return out;
 }
 
 const HELP = [
@@ -578,12 +616,22 @@ function start(opts) {
 
       const c = e.role === 'user' ? 'U' : e.role === 'agent' ? 'A' : 'T';
       const mark = e.role === 'user' ? '▸' : e.role === 'agent' ? '●' : '·';
-      const lines = wrapText(body, Math.max(10, inner - 4));
-
-      lines.forEach((line, j) => {
-        if (j === 0) out.push(tag(palette, `{${c}}{bold}${mark}{/bold}{/${c}} `) + linkify(line, palette));
-        else out.push('  ' + linkify(line, palette));
-      });
+      const blocks = parseBlocks(body);
+      let first = true;
+      for (const b of blocks) {
+        if (b.type === 'code') {
+          if (first) { out.push(tag(palette, `{${c}}{bold}${mark}{/bold}{/${c}}`)); first = false; }
+          out.push(...renderCodeBlock(b, Math.max(20, inner - 2), palette).map((l) => '  ' + l));
+          continue;
+        }
+        const prepared = prepare(b.content, 4);
+        const lines = wrapText(prepared, Math.max(10, inner - 4));
+        lines.forEach((line) => {
+          const rendered = linkify(renderMarkdownLine(line, palette), palette);
+          if (first) { out.push(tag(palette, `{${c}}{bold}${mark}{/bold}{/${c}} `) + rendered); first = false; }
+          else out.push('  ' + rendered);
+        });
+      }
     }
 
     log.setContent(out.join('\n'));
