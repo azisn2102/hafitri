@@ -13,6 +13,7 @@ const geminiApi = require('./geminiApi');
 const aistudioWeb = require('./aistudioWeb');
 const store = require('./sessionStore');
 const memory = require('./memory');
+const appState = require('./state');
 
 const THEMES = {
   opencode: {
@@ -424,6 +425,7 @@ function start(opts) {
         : picked.id === 'aistudio-web' ? 'provider = AI Studio web (hydrogen / high)'
         : `provider = ${picked.id}`);
       drawHeader();
+      persistState();
     }
   }
 
@@ -500,10 +502,22 @@ function start(opts) {
     renderLog();
   }
 
+  const last = appState.load();
+  if (last.provider) cfg.provider = last.provider;
+  if (last.model) cfg.model = last.model;
+  if (last.geminiModel) cfg.geminiModel = last.geminiModel;
+  if (last.sessionId) store.setActive(last.sessionId);
   const active = store.load();
   if (active && active.messages && active.messages.length > 1) {
     messages = active.messages;
+    geminiWeb.setChatUrl(active.meta && active.meta.geminiChatUrl || '');
+    chatgptWeb.setChatUrl(active.meta && active.meta.chatgptChatUrl || '');
+    claudeWeb.setChatUrl(active.meta && active.meta.claudeChatUrl || '');
+    deepseekWeb.setChatUrl(active.meta && active.meta.deepseekChatUrl || '');
     showMessages(messages);
+  }
+  function persistState() {
+    appState.save({ provider: cfg.provider, model: cfg.model, geminiModel: cfg.geminiModel, sessionId: store.activeId() || '' });
   }
   function historyInfo() {
     const id = store.activeId();
@@ -671,6 +685,7 @@ function start(opts) {
     deepseekWeb.reset();
     showMessages(messages);
     notify(`sesi ${picked.id} dimuat — ${picked.title}`);
+    persistState();
   }
 
   async function command(line) {
@@ -708,6 +723,7 @@ function start(opts) {
         geminiApi.reset(); aistudioWeb.reset();
         showMessages([]);
         drawStatus('');
+        persistState();
         break;
       }
       case 'sessions':
@@ -768,6 +784,7 @@ function start(opts) {
           notify('model = ' + arg);
         }
         drawHeader();
+        persistState();
         break;
       case 'provider':
         if (!arg) showProviderPicker();
@@ -782,6 +799,7 @@ function start(opts) {
           aistudioWeb.reset();
           notify(arg === 'chatgpt-web' ? 'provider = chatgpt-web — jalankan /login chatgpt bila belum login' : `provider = ${arg}`);
           drawHeader();
+          persistState();
         }
         break;
       case 'reasoning':
