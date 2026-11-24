@@ -521,39 +521,32 @@ function start(opts) {
 
   function renderLog() {
     const cols = screen.cols || log.width || 80;
-    const inner = Math.max(20, cols - 6);
+    const inner = Math.max(20, cols - 4);
     const maxIndent = cols < 60 ? 2 : 4;
     const out = [];
-    let turn = 0;
 
-    for (const e of entries) {
-      const mark = e.role === 'user' ? palette.userMark
-        : e.role === 'agent' ? palette.agentMark
-          : e.role === 'tool' ? palette.toolMark : '·';
-      const label = e.role === 'user' ? 'ANDA'
-        : e.role === 'agent' ? 'HAFITRI'
-          : e.role === 'tool' ? 'TOOL' : 'INFO';
-      const c = e.role === 'user' ? 'U'
-        : e.role === 'agent' ? 'A'
-          : e.role === 'tool' ? 'T' : 'M';
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      const prev = entries[i - 1];
       const body = prepare(e.text, maxIndent);
-
       if (e.role === 'plain') {
-        out.push(tag(palette, `{M}${'·'.repeat(Math.min(inner, 32))}{/M}`));
         for (const line of wrapText(body, inner)) out.push(linkify(line, palette));
-        out.push('');
+        if (entries[i + 1]) out.push('');
         continue;
       }
 
-      turn += 1;
-      const rule = '─'.repeat(Math.max(10, Math.min(inner, 70)));
-      out.push(tag(palette, `{M}┌${rule}{/M}`));
-      out.push(tag(palette, `{${c}}{bold}${mark} ${label}{/bold}{/${c}}  {M}#${turn}{/M}`));
-      for (const line of wrapText(body, Math.max(10, inner - 4))) {
-        out.push(tag(palette, `{M}│{/M} `) + linkify(line, palette));
-      }
-      out.push(tag(palette, `{M}└${rule}{/M}`));
-      out.push('');
+      // Pisahkan giliran antar role (user/agent) dengan spasi tipis, bukan kotak.
+      if (prev && prev.role !== e.role) out.push('');
+
+      const mark = e.role === 'user' ? palette.userMark
+        : e.role === 'agent' ? palette.agentMark : palette.toolMark;
+      const label = e.role === 'user' ? 'Anda'
+        : e.role === 'agent' ? 'Hafitri' : 'Tool';
+      const c = e.role === 'user' ? 'U' : e.role === 'agent' ? 'A' : 'T';
+      const lines = wrapText(body, Math.max(10, inner - 2));
+
+      out.push(tag(palette, `{${c}}{bold}${mark} ${label}{/bold}{/${c}}`));
+      for (const line of lines) out.push('  ' + linkify(line, palette));
     }
 
     log.setContent(out.join('\n'));
