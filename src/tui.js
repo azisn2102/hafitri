@@ -187,7 +187,7 @@ function start(opts) {
 
   const helpPicker = blessed.list({
     top: 3, left: 2, width: '86%', height: '70%',
-    label: ' BANTUAN — ↑↓ navigasi, ESC tutup ', border: { type: 'round' },
+    label: ' BANTUAN — ↑↓ lalu Enter pilih, ESC tutup ', border: { type: 'round' },
     hidden: true, keys: true, mouse: true, vi: false,
     style: {
       fg: palette.text, bg: palette.panel,
@@ -303,6 +303,25 @@ function start(opts) {
     helpPicker.hide();
     focusInput();
     screen.render();
+  }
+
+  function chooseHelp() {
+    const raw = String(helpPicker.getItem(helpPicker.selected) || '')
+      .replace(/^\s*\d+\.\s*/, '');
+    const match = raw.match(/^(\S+(?:\s+\S+)*?)\s{2,}/);
+    const cmd = (match ? match[1] : raw.trim().split(/\s+/)[0] || '').trim();
+    closeHelpPicker();
+    input.setValue('');
+    if (!cmd) return;
+    // Perintah dengan argumen diisi ke input supaya user bisa melengkapi;
+    // sisanya langsung dijalankan.
+    if (/[<\[]/.test(cmd) || /^\/steps\b/.test(cmd)) {
+      input.setValue(cmd.split(/\s+/)[0] + ' ');
+      input.focus();
+      screen.render();
+    } else {
+      handle(cmd);
+    }
   }
 
   let messages = null;
@@ -649,9 +668,10 @@ function start(opts) {
   input.on('keypress', (ch, key) => {
     if (!key) return;
     if (helpPickerActive) {
-      // Panel bantuan permanen: ↑↓ untuk navigasi, hanya ESC yang menutup.
+      // Panel bantuan permanen: ↑↓ navigasi, Enter pilih, ESC tutup.
       if (key.name === 'up') helpPicker.up();
       else if (key.name === 'down') helpPicker.down();
+      else if (key.name === 'enter') chooseHelp();
       else if (key.name === 'escape') closeHelpPicker();
       else return;
       key.name = '';
