@@ -1,5 +1,7 @@
 'use strict';
 const cfg = require('./config');
+const memory = require('./memory');
+const store = require('./sessionStore');
 
 const BAKU = 'Aku hafitri, agent CLI lokal yang membantu otomasi tugas, coding, dan riset web.';
 
@@ -34,6 +36,8 @@ function systemOf(messages) {
 
 function buildInput(messages) {
   const out = [];
+  const mem = memory.render(store.activeId() || 'default', 4000);
+  if (mem) out.push(mem);
   for (const m of messages) {
     if (m.role === 'system') continue;
     if (m.role === 'user') out.push('PESAN USER:\n' + m.content);
