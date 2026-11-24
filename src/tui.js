@@ -92,7 +92,7 @@ function linkify(line) {
 }
 
 const HELP = [
-  '/help              bantuan ini',
+  '/help              bantuan ini (menu ini)',
   '/theme [nama]      opencode | mimo',
   '/new               sesi baru (sesi lama tetap tersimpan)',
   '/sessions          pilih sesi (↑↓ + Enter, ESC batal)',
@@ -317,6 +317,12 @@ function start(opts) {
       .replace(/^\s*\d+\.\s*/, '');
     const match = raw.match(/^(\S+(?:\s+\S+)*?)\s{2,}/);
     const cmd = (match ? match[1] : raw.trim().split(/\s+/)[0] || '').trim();
+    // Baris /help adalah self-reference: cukup kembali ke atas, jangan tutup-buka lagi.
+    if (cmd === '/help') {
+      helpPicker.select(0);
+      screen.render();
+      return;
+    }
     closeHelpPicker();
     input.setValue('');
     if (!cmd) return;
