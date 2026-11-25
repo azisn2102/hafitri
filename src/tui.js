@@ -198,9 +198,29 @@ function start(opts) {
     const d = Math.floor(h / 24);
     return `${d}h lalu`;
   }
+  function fuzzyScore(q, text) {
+    const query = String(q || '').toLowerCase().trim();
+    const hay = String(text || '').toLower();
+    if (!query) return 1;
+    if (hay.includes(query)) return 100 - Math.min(80, hay.indexOf(query));
+    let qi = 0, score = 0, last = -2;
+    for (let i = 0; i < hay.length && qi < query.length; i++) {
+      if (hay[i] === query[qi]) {
+        score += 10 - Math.min(8, i - last - 1);
+        last = i;
+        qi++;
+      }
+    }
+    return qi === query.length ? score : -1;
+  }
   function sessionRows(filter = '') {
-    const q = String(filter || '').toLowerCase().trim();
-    return store.list().filter((s) => !q || `${s.title} ${s.id} ${s.provider} ${s.model}`.toLowerCase().includes(q));
+    const q = String(filter || '').trim();
+    const rows = store.list().map((s) => {
+      const score = fuzzyScore(q, `${s.title} ${s.id} ${s.provider} ${s.model}`);
+      return { s, score };
+    }).filter((x) => x.score >= 0);
+    rows.sort((a, b) => b.score - a.score || String(b.s.updatedAt).localeCompare(String(a.s.updatedAt)));
+    return rows.map((x) => x.s);
   }
   let pickerFilter = '';
   let pickerRows = [];
@@ -213,8 +233,9 @@ function start(opts) {
       picker.setItems(pickerRows.map((s, i) => {
         const active = s.id === store.activeId() ? '●' : ' ';
         const prov = (s.provider || '-').replace(/-web$/, '').replace(/-api$/, ' api');
-        const title = String(s.title || '(kosong)').slice(0, 42);
-        return ` ${active} ${String(i + 1).padStart(2, ' ')}  ${title.padEnd(42)}  ${String(s.count).padStart(3, ' ')} msg  ${fmtAge(s.updatedAt).padEnd(8)}  ${prov}`;
+        const title = String(s.title || '(kosong)').slice(0, 34);
+        const chat = s.chatUrl ? 'chat↗' : '     ';
+        return ` ${active} ${String(i + 1).padStart(2, ' ')}  ${title.padEnd(34)}  ${String(s.count).padStart(3, ' ')}m  ${fmtAge(s.updatedAt).padEnd(8)}  ${prov.padEnd(8)} ${chat}`;
       }));
     }
     picker.select(0);
@@ -376,8 +397,12 @@ function start(opts) {
   let paletteFilter = '';
   let paletteRows = [];
   function renderCommandPalette() {
-    const q = paletteFilter.toLowerCase().trim();
-    paletteRows = PALETTE_COMMANDS.filter((c) => !q || `${c.label} ${c.cmd}`.toLowerCase().includes(q));
+    const q = paletteFilter.trim();
+    paletteRows = PALETTE_COMMANDS
+      .map((c) => ({ c, score: fuzzyScore(q, `${c.label} ${c.cmd}`) }))
+      .filter((x) => x.score >= 0)
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.c);
     commandPicker.setLabel(` COMMAND PALETTE ${q ? `filter: ${q} ` : ''}— ↑↓ Enter  ketik filter  ESC `);
     commandPicker.setItems(paletteRows.length ? paletteRows.map((c) => ` ${c.label.padEnd(24)} ${c.cmd}`) : ['  (tidak ada command cocok)']);
     commandPicker.select(0);
