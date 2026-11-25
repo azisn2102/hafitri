@@ -76,28 +76,36 @@ function start(opts) {
 
   const header = blessed.box({
     top: 0, left: 0, width: '100%', height: 1, tags: true,
-    style: { fg: palette.text, bg: palette.panel },
+    style: { fg: palette.text, bg: palette.bg },
   });
   const log = blessed.box({
-    top: 1, left: 0, width: '100%', height: '100%-5',
-    label: ' PERCAKAPAN ', border: { type: 'round' },
+    top: 1, left: 0, width: '100%', height: '100%-3',
     tags: true, wrap: false, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
     padding: { left: 1, right: 1 },
     scrollbar: {
       ch: ' ',
-      style: { bg: palette.accent },
-      track: { style: { bg: palette.panel } },
+      style: { bg: palette.muted },
+      track: { style: { bg: palette.bg } },
     },
-    style: { fg: palette.text, bg: palette.bg, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },
-  });
-  const status = blessed.box({
-    bottom: 3, left: 0, width: '100%', height: 1,
     style: { fg: palette.text, bg: palette.bg },
   });
+  const status = blessed.box({
+    bottom: 2, left: 0, width: '100%', height: 1, tags: true,
+    style: { fg: palette.muted, bg: palette.bg },
+  });
+  const sep = blessed.box({
+    bottom: 1, left: 0, width: '100%', height: 1,
+    style: { fg: palette.border, bg: palette.bg },
+  });
+  const prompt = blessed.box({
+    bottom: 0, left: 0, width: 3, height: 1, tags: true,
+    content: tag(palette, ' {A}{bold}❯{/bold}{/A} '),
+    style: { fg: palette.accent, bg: palette.bg },
+  });
   const input = blessed.textbox({
-    bottom: 0, left: 0, width: '100%', height: 3,
-    label: ' ❯ pesan (Enter kirim · /help perintah) ', border: { type: 'round' }, inputOnFocus: true,
-    style: { fg: palette.text, bg: palette.panel, border: { fg: palette.accent }, label: { fg: palette.accent, bold: true } },
+    bottom: 0, left: 3, width: '100%-3', height: 1,
+    inputOnFocus: true,
+    style: { fg: palette.text, bg: palette.bg },
   });
 
   const notice = blessed.box({
@@ -141,15 +149,30 @@ function start(opts) {
     },
   });
 
+  const commandPicker = blessed.list({
+    top: 3, left: 'center', width: '72%', height: '60%',
+    label: ' COMMAND PALETTE — ↑↓ Enter  ESC tutup ', border: { type: 'round' },
+    hidden: true, keys: false, mouse: true, vi: false,
+    style: {
+      fg: palette.text, bg: palette.panel,
+      border: { fg: palette.accent }, label: { fg: palette.accent, bold: true },
+      selected: { fg: palette.text, bg: palette.accent },
+    },
+  });
+
   screen.append(header);
   screen.append(log);
   screen.append(status);
+  screen.append(sep);
+  screen.append(prompt);
   screen.append(input);
   screen.append(notice);
   screen.append(picker);
   screen.append(providerPicker);
   screen.append(helpPicker);
+  screen.append(commandPicker);
   helpPicker.on('select', () => { if (helpPickerActive) chooseHelp(); });
+  commandPicker.on('select', () => { if (commandPickerActive) chooseCommand(); });
 
   const ESC_HINT = 'ESC lagi untuk keluar';
   let noticeTimer = null;
@@ -250,6 +273,7 @@ function start(opts) {
   ];
   let providerPickerActive = false;
   let helpPickerActive = false;
+  let commandPickerActive = false;
   function showProviderPicker() {
     const current = cfg.provider;
     providerPicker.setItems(PROVIDERS.map((p) => `${p.id === current ? '*' : ' '} ${p.label}`));
@@ -304,34 +328,67 @@ function start(opts) {
   }
 
   function chooseHelp() {
-    // ritems berisi string asli; items[] berisi objek ListItem (String()-nya [object Object]).
     let selected = (helpPicker.ritems || [])[helpPicker.selected];
     if (selected == null) {
       const item = helpPicker.getItem(helpPicker.selected);
       selected = item && typeof item.getContent === 'function' ? item.getContent() : item;
     }
-    const raw = String(selected == null ? '' : selected)
-      .replace(/^\s*\d+\.\s*/, '');
+    const raw = String(selected == null ? '' : selected).replace(/^\s*\d+\.\s*/, '');
     const match = raw.match(/^(\S+(?:\s+\S+)*?)\s{2,}/);
     const cmd = (match ? match[1] : raw.trim().split(/\s+/)[0] || '').trim();
-    // Baris /help adalah self-reference: cukup kembali ke atas, jangan tutup-buka lagi.
-    if (cmd === '/help') {
-      helpPicker.select(0);
-      screen.render();
-      return;
-    }
+    if (cmd === '/help') { helpPicker.select(0); screen.render(); return; }
     closeHelpPicker();
     input.setValue('');
     if (!cmd) return;
-    // Perintah dengan argumen diisi ke input supaya user bisa melengkapi;
-    // sisanya langsung dijalankan.
     if (/[<\[]/.test(cmd) || /^\/steps\b/.test(cmd)) {
       input.setValue(cmd.split(/\s+/)[0] + ' ');
-      input.focus();
+      focusInput();
       screen.render();
     } else {
       handle(cmd);
     }
+  }
+
+  const PALETTE_COMMANDS = [
+    { label: 'New session', cmd: '/new' },
+    { label: 'Sessions', cmd: '/sessions' },
+    { label: 'Provider', cmd: '/provider' },
+    { label: 'Model', cmd: '/model ' },
+    { label: 'Reasoning', cmd: '/reasoning ' },
+    { label: 'Login browser', cmd: '/login' },
+    { label: 'Theme', cmd: '/theme ' },
+    { label: 'History info', cmd: '/history' },
+    { label: 'Clear view', cmd: '/clear' },
+    { label: 'Reset active session', cmd: '/reset' },
+    { label: 'Help', cmd: '/help' },
+    { label: 'Quit', cmd: '/quit' },
+  ];
+  function showCommandPalette() {
+    commandPicker.setItems(PALETTE_COMMANDS.map((c) => ` ${c.label.padEnd(24)} ${c.cmd}`));
+    commandPicker.select(0);
+    commandPicker.show();
+    commandPickerActive = true;
+    commandPicker.focus();
+    screen.render();
+  }
+  function closeCommandPalette() {
+    commandPickerActive = false;
+    commandPicker.hide();
+    resetEscHint();
+    focusInput();
+    screen.render();
+  }
+  function chooseCommand() {
+    const picked = PALETTE_COMMANDS[commandPicker.selected];
+    closeCommandPalette();
+    if (!picked) return;
+    if (picked.cmd.endsWith(' ')) {
+      input.setValue(picked.cmd);
+      focusInput();
+      screen.render();
+      return;
+    }
+    handle(picked.cmd);
   }
 
   let messages = null;
@@ -407,12 +464,15 @@ function start(opts) {
     if (!THEMES[name]) return false;
     theme = name;
     palette = THEMES[name];
-    header.style.fg = palette.text; header.style.bg = palette.panel;
-    log.style.fg = palette.text; log.style.bg = palette.bg; log.style.border.fg = palette.accent;
-    log.style.label.fg = palette.accent;
-    status.style.fg = palette.text; status.style.bg = palette.bg;
-    input.style.fg = palette.text; input.style.bg = palette.panel; input.style.border.fg = palette.accent;
-    input.style.label.fg = palette.accent;
+    header.style.fg = palette.text; header.style.bg = palette.bg;
+    log.style.fg = palette.text; log.style.bg = palette.bg;
+    log.options.scrollbar.style.bg = palette.muted;
+    log.options.scrollbar.track.style.bg = palette.bg;
+    status.style.fg = palette.muted; status.style.bg = palette.bg;
+    sep.style.fg = palette.border; sep.style.bg = palette.bg;
+    prompt.style.fg = palette.accent; prompt.style.bg = palette.bg;
+    prompt.setContent(tag(palette, ' {A}{bold}❯{/bold}{/A} '));
+    input.style.fg = palette.text; input.style.bg = palette.bg;
     notice.style.fg = palette.text; notice.style.bg = palette.panel;
     notice.style.border.fg = palette.accent; notice.style.label.fg = palette.accent;
     providerPicker.style.fg = palette.text; providerPicker.style.bg = palette.panel;
@@ -421,6 +481,9 @@ function start(opts) {
     helpPicker.style.fg = palette.text; helpPicker.style.bg = palette.panel;
     helpPicker.style.border.fg = palette.accent; helpPicker.style.label.fg = palette.accent;
     helpPicker.style.selected.fg = palette.text; helpPicker.style.selected.bg = palette.accent;
+    commandPicker.style.fg = palette.text; commandPicker.style.bg = palette.panel;
+    commandPicker.style.border.fg = palette.accent; commandPicker.style.label.fg = palette.accent;
+    commandPicker.style.selected.fg = palette.text; commandPicker.style.selected.bg = palette.accent;
     log.options.scrollbar.style.bg = palette.accent;
     log.options.scrollbar.track.style.bg = palette.panel;
     drawHeader();
@@ -428,27 +491,34 @@ function start(opts) {
     return true;
   }
 
+  function shortCwd() {
+    const cwd = process.cwd().replace(process.env.HOME || '', '~');
+    return cwd.length > 28 ? '…' + cwd.slice(-27) : cwd;
+  }
+
   function drawHeader() {
-    header.style.fg = palette.accent;
-    header.setContent(tag(palette,
-      ` {A}{bold}${palette.brand} hafitri{/bold}{/A}  {M}│{/M}  {bold}${providerLabel()}{/bold}  {M}│{/M}  /help  {M}│{/M}  /provider  {M}│{/M}  ESC×2 keluar`
-    ));
+    const cols = screen.cols || 80;
+    const left = tag(palette, ` {A}{bold}${palette.brand} hafitri{/bold}{/A} {M}${shortCwd()}{/M}`);
+    const right = tag(palette, `{M}${providerLabel()}  ${store.activeId() || 'no-session'}  ctrl+p{/M} `);
+    const pad = Math.max(1, cols - visibleLen(left) - visibleLen(right));
+    header.setContent(left + ' '.repeat(pad) + right);
     screen.render();
   }
 
   function drawStatus(extra) {
     if (extra !== undefined) statusExtra = extra;
     const cols = screen.cols || 80;
-    const spin = busy ? `${SPIN[spinFrame]} berpikir` : '✓ siap';
-    const parts = [spin, `sesi ${sessionState}`];
-    if (cols > 70) parts.push(`tema ${theme}`);
-    if (cols > 52) parts.push(`${latency}`);
-    if (statusExtra) parts.push(statusExtra);
-    const sep = tag(palette, `{M} │ {/M}`);
-    status.setContent(' ' + parts.map((p, i) => {
-      if (i === 0) return busy ? tag(palette, `{A}${p}{/A}`) : tag(palette, `{K}${p}{/K}`);
-      return p === statusExtra ? tag(palette, `{U}${p}{/U}`) : tag(palette, `{M}${p}{/M}`);
-    }).join(sep));
+    const state = busy ? `${SPIN[spinFrame]} berpikir` : 'siap';
+    const leftParts = [busy ? tag(palette, `{A}${state}{/A}`) : tag(palette, `{K}${state}{/K}`)];
+    leftParts.push(tag(palette, `{M}${latency}{/M}`));
+    if (pending.length) leftParts.push(tag(palette, `{U}antrian ${pending.length}{/U}`));
+    if (statusExtra) leftParts.push(tag(palette, `{U}${statusExtra}{/U}`));
+    const left = ' ' + leftParts.join(tag(palette, `{M}  ·  {/M}`));
+    const hints = cols > 72 ? 'enter kirim  /help  /provider  esc×2 keluar' : '/help  esc×2 keluar';
+    const right = tag(palette, `{M}${hints}{/M} `);
+    const pad = Math.max(1, cols - visibleLen(left) - visibleLen(right));
+    status.setContent(left + ' '.repeat(pad) + right);
+    sep.setContent(tag(palette, `{M}${'─'.repeat(Math.max(0, cols))}{/M}`));
     screen.render();
   }
 
@@ -470,8 +540,19 @@ function start(opts) {
   function renderLog() {
     const cols = screen.cols || log.width || 80;
     const inner = Math.max(20, cols - 4);
-    const maxIndent = cols < 60 ? 2 : 4;
     const out = [];
+
+    if (!entries.length) {
+      out.push('');
+      out.push(tag(palette, `  {A}{bold}${palette.brand} hafitri{/bold}{/A}`));
+      out.push(tag(palette, `  {M}Agent lokal untuk coding, otomasi, riset web, dan browser.{/M}`));
+      out.push('');
+      out.push(tag(palette, `  {M}Coba:{/M}  jelaskan repo ini  {M}·{/M}  /provider  {M}·{/M}  /sessions  {M}·{/M}  /help`));
+      out.push(tag(palette, `  {M}Ctrl+P command palette   ESC×2 keluar{/M}`));
+      log.setContent(out.join('\n'));
+      screen.render();
+      return;
+    }
 
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
@@ -695,10 +776,13 @@ function start(opts) {
     drawStatus(pending.length ? `antrian ${pending.length}` : '');
     try {
       const answer = await step(messages, opts, (ev) => {
-        append('tool', `${ev.name} ${JSON.stringify(ev.args || {})}`);
-        const lines = String(ev.result || '').split('\n');
-        append('tool', lines.slice(0, 10).join('\n'));
-        if (lines.length > 10) append('tool', `... (${lines.length - 10} baris lagi)`);
+        const args = ev.args || {};
+      const shortArg = args.command || args.path || args.query || args.url || args.prompt || args.id || '';
+      const argText = shortArg ? ` ${String(shortArg).replace(/\s+/g, ' ').slice(0, 80)}` : '';
+      const lines = String(ev.result || '').split('\n').filter((l, i, a) => !(i === a.length - 1 && l === ''));
+      const preview = lines.slice(0, 3).join(' | ').slice(0, 120);
+      const more = lines.length > 3 ? ` · +${lines.length - 3} baris` : '';
+      append('tool', `⚙ ${ev.name}${argText}${preview ? `\n${preview}${more}` : ''}`);
       });
       latency = ((Date.now() - started) / 1000).toFixed(1) + 's';
       append('agent', answer);
@@ -727,8 +811,22 @@ function start(opts) {
   input.on('keypress', (ch, key) => {
     if (!key) return;
     if (key.name !== 'escape' && statusExtra === ESC_HINT) resetEscHint();
+    if (key.ctrl && key.name === 'p' && !helpPickerActive && !providerPickerActive && !pickerActive && !commandPickerActive) {
+      key.name = '';
+      showCommandPalette();
+      return;
+    }
+    if (commandPickerActive) {
+      if (key.name === 'up') commandPicker.up();
+      else if (key.name === 'down') commandPicker.down();
+      else if (key.name === 'enter') chooseCommand();
+      else if (key.name === 'escape' || (key.ctrl && key.name === 'p')) closeCommandPalette();
+      else return;
+      key.name = '';
+      screen.render();
+      return;
+    }
     if (helpPickerActive) {
-      // Panel bantuan permanen: ↑↓ navigasi, Enter pilih, ESC tutup.
       if (key.name === 'up') helpPicker.up();
       else if (key.name === 'down') helpPicker.down();
       else if (key.name === 'enter') chooseHelp();
@@ -766,6 +864,12 @@ function start(opts) {
       else return;
       key.name = '';
       screen.render();
+      return;
+    }
+    if (key.ctrl && key.name === 'l') {
+      key.name = '';
+      entries.length = 0;
+      renderLog();
       return;
     }
     if (key.name === 'tab') {
