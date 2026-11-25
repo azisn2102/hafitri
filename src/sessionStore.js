@@ -35,7 +35,17 @@ function list() {
   return fs.readdirSync(LIST).filter((f) => f.endsWith('.json')).map((f) => {
     try {
       const d = JSON.parse(fs.readFileSync(path.join(LIST, f), 'utf8'));
-      return { id: d.id, title: d.title || title(d.messages), updatedAt: d.updatedAt, count: (d.messages || []).length };
+      const meta = d.meta || {};
+      return {
+        id: d.id,
+        title: d.title || title(d.messages),
+        updatedAt: d.updatedAt,
+        createdAt: d.createdAt,
+        count: (d.messages || []).length,
+        provider: meta.provider || '',
+        model: meta.model || '',
+        chatUrl: meta.geminiChatUrl || meta.chatgptChatUrl || meta.claudeChatUrl || meta.deepseekChatUrl || '',
+      };
     } catch { return null; }
   }).filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }

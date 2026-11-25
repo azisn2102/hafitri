@@ -36,26 +36,20 @@ const {
 } = renderUi;
 
 const HELP = [
-  '/help              bantuan ini (menu ini)',
-  '/theme [nama]      opencode | mimo',
+  '/help              bantuan ini',
   '/new               sesi baru (sesi lama tetap tersimpan)',
-  '/sessions          pilih sesi (↑↓ + Enter, ESC batal)',
+  '/sessions          pilih/filter sesi (↑↓ Enter, ketik filter, Ctrl+D×2 hapus)',
   '/load <n|id>       muat sesi langsung',
   '/reset             kosongkan sesi aktif',
-  '/clear             bersihkan layar (riwayat tetap tersimpan)',
+  '/clear             bersihkan tampilan (riwayat tetap tersimpan)',
   '/history           info riwayat tersimpan',
-  '/login             start sesi noVNC + URL login',
-  '/login chatgpt     buka chatgpt.com di noVNC untuk login',
-  '/login claude      buka claude.ai di noVNC untuk login',
-  '/login deepseek    buka chat.deepseek.com di noVNC untuk login',
-  '/login aistudio    buka AI Studio di noVNC untuk login',
-  '/session start     start browser + noVNC',
-  '/session stop      matikan sesi browser',
-  '/session status    cek status sesi',
-  '/session url       URL noVNC',
+  '/provider          pilih provider',
   '/model <nama>      auto|flash|hydrogen|pro (Gemini) atau nama model API',
-  '/reasoning <level> rendah|menengah|tinggi|off (khusus Hydrogen)',
-  '/provider         pilih provider (↑↓ + Enter, ESC batal)',
+  '/reasoning <level> rendah|menengah|tinggi|off (Gemini Hydrogen)',
+  '/tools <mode>      compact|detail|hide tampilan tool call',
+  '/theme [nama]      opencode | mimo',
+  '/login ...         gemini/chatgpt/claude/deepseek/aistudio via noVNC',
+  '/session ...       start|stop|status|url browser noVNC',
   '/yolo [on|off]     izinkan perintah berisiko',
   '/steps N           batas langkah tool',
   '/quit              keluar',
@@ -193,15 +187,43 @@ function start(opts) {
     focusInput();
   }
 
-  function showPicker() {
-    const rows = store.list();
-    if (!rows.length) return notify('belum ada sesi tersimpan');
-    picker.setLabel(' PILIH SESI — ↑↓ Enter, Ctrl+D×2 hapus, ESC batal ');
-    picker.setItems(rows.map((s, i) => {
-      const mark = s.id === store.activeId() ? '*' : ' ';
-      return `${mark} [${i + 1}] ${s.title} | ${s.count} pesan | ${new Date(s.updatedAt).toLocaleString('id-ID')}`;
-    }));
+  function fmtAge(iso) {
+    const ms = Date.now() - new Date(iso || 0).getTime();
+    if (!Number.isFinite(ms) || ms < 0) return '-';
+    const m = Math.floor(ms / 60000);
+    if (m < 1) return 'baru saja';
+    if (m < 60) return `${m}m lalu`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}j lalu`;
+    const d = Math.floor(h / 24);
+    return `${d}h lalu`;
+  }
+  function sessionRows(filter = '') {
+    const q = String(filter || '').toLowerCase().trim();
+    return store.list().filter((s) => !q || `${s.title} ${s.id} ${s.provider} ${s.model}`.toLowerCase().includes(q));
+  }
+  let pickerFilter = '';
+  let pickerRows = [];
+  function renderPicker() {
+    pickerRows = sessionRows(pickerFilter);
+    picker.setLabel(` SESI ${pickerFilter ? `filter: ${pickerFilter} ` : ''}— ↑↓ Enter  Ctrl+D×2 hapus  ketik filter  ESC `);
+    if (!pickerRows.length) {
+      picker.setItems([pickerFilter ? '  (tidak ada sesi cocok)' : '  (belum ada sesi)']);
+    } else {
+      picker.setItems(pickerRows.map((s, i) => {
+        const active = s.id === store.activeId() ? '●' : ' ';
+        const prov = (s.provider || '-').replace(/-web$/, '').replace(/-api$/, ' api');
+        const title = String(s.title || '(kosong)').slice(0, 42);
+        return ` ${active} ${String(i + 1).padStart(2, ' ')}  ${title.padEnd(42)}  ${String(s.count).padStart(3, ' ')} msg  ${fmtAge(s.updatedAt).padEnd(8)}  ${prov}`;
+      }));
+    }
     picker.select(0);
+    screen.render();
+  }
+  function showPicker() {
+    pickerFilter = '';
+    renderPicker();
+    if (!store.list().length) return notify('belum ada sesi tersimpan');
     picker.show();
     pickerActive = true;
     pickerDelAt = 0;
@@ -220,21 +242,20 @@ function start(opts) {
   let pickerActive = false;
   let pickerDelAt = 0;
   function choosePicker() {
-    const rows = store.list();
     const index = picker.selected;
+    const target = pickerRows[index];
     closePicker();
-    if (rows[index]) loadSession(rows[index].id);
+    if (target) loadSession(target.id);
   }
 
   function deletePickerSession() {
-    const rows = store.list();
     const index = picker.selected;
-    const target = rows[index];
+    const target = pickerRows[index];
     if (!target) return;
     store.remove(target.id);
     try { memory.clear(target.id); } catch { /* abaikan */ }
-    const next = store.list();
-    if (!next.length) {
+    const next = sessionRows(pickerFilter);
+    if (!store.list().length) {
       closePicker();
       messages = null;
       showMessages([]);
@@ -242,22 +263,9 @@ function start(opts) {
       notify('sesi dihapus — tidak ada sesi tersisa');
       return;
     }
-    // Jika sesi aktif dihapus, store.remove sudah memilih sesi aktif baru.
-    const active = store.activeId();
-    if (target.id === active || !active) {
-      // aktif sudah pindah otomatis oleh store.remove
-    }
-    if (messages && messages.length && !store.load(store.activeId())) {
-      messages = null;
-      showMessages([]);
-    }
-    // Kalau sesi yang sedang dibuka dihapus, muat sesi aktif baru.
-    if (target.id === (messages ? store.activeId() : null) || target.id === store.activeId()) {
-      loadSession(store.activeId());
-    }
-    showPicker();
-    const idx = Math.min(index, next.length - 1);
-    picker.select(idx);
+    if (target.id === store.activeId()) loadSession(store.activeId());
+    renderPicker();
+    picker.select(Math.min(index, Math.max(0, next.length - 1)));
     notify('sesi dihapus');
     screen.render();
   }
@@ -355,9 +363,11 @@ function start(opts) {
     { label: 'Provider', cmd: '/provider' },
     { label: 'Model', cmd: '/model ' },
     { label: 'Reasoning', cmd: '/reasoning ' },
+    { label: 'Tool view: compact', cmd: '/tools compact' },
+    { label: 'Tool view: detail', cmd: '/tools detail' },
+    { label: 'Tool view: hide', cmd: '/tools hide' },
     { label: 'Login browser', cmd: '/login' },
     { label: 'Theme', cmd: '/theme ' },
-    { label: 'History info', cmd: '/history' },
     { label: 'Clear view', cmd: '/clear' },
     { label: 'Reset active session', cmd: '/reset' },
     { label: 'Help', cmd: '/help' },
@@ -396,6 +406,7 @@ function start(opts) {
   let sessionState = 'cek...';
   let statusExtra = '';
   let latency = '-';
+  let toolView = 'compact'; // compact|detail|hide
   let spinTimer = null;
   let spinFrame = 0;
   const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -430,6 +441,20 @@ function start(opts) {
     claudeWeb.setChatUrl(active.meta && active.meta.claudeChatUrl || '');
     deepseekWeb.setChatUrl(active.meta && active.meta.deepseekChatUrl || '');
     showMessages(messages);
+  }
+  function sessionMeta() {
+    const model = cfg.provider === 'gemini-web' ? cfg.geminiModel
+      : cfg.provider === 'gemini-api' ? cfg.geminiApiModel
+        : cfg.provider === 'aistudio-web' ? 'hydrogen'
+          : cfg.model;
+    return {
+      provider: cfg.provider,
+      model,
+      geminiChatUrl: geminiWeb.getChatUrl() || '',
+      chatgptChatUrl: chatgptWeb.getChatUrl() || '',
+      claudeChatUrl: claudeWeb.getChatUrl() || '',
+      deepseekChatUrl: deepseekWeb.getChatUrl() || '',
+    };
   }
   function persistState() {
     appState.save({ provider: cfg.provider, model: cfg.model, geminiModel: cfg.geminiModel, sessionId: store.activeId() || '' });
@@ -567,6 +592,19 @@ function start(opts) {
       // Pisahkan giliran antar role (user/agent) dengan spasi tipis, bukan kotak.
       if (prev && prev.role !== e.role) out.push('');
 
+      if (e.role === 'tool') {
+        if (toolView === 'hide') continue;
+        const body = String(e.text || '');
+        if (toolView === 'detail') {
+          out.push(tag(palette, `{T}·{/T} `) + tag(palette, `{M}${body.split('\n')[0].slice(0, inner - 4)}{/M}`));
+          for (const line of body.split('\n').slice(1, 12)) out.push(tag(palette, `  {M}${line.slice(0, inner - 4)}{/M}`));
+          if (body.split('\n').length > 13) out.push(tag(palette, `  {M}…{/M}`));
+        } else {
+          out.push(tag(palette, `{M}  ${body.split('\n')[0].slice(0, inner - 4)}{/M}`));
+        }
+        continue;
+      }
+
       const c = e.role === 'user' ? 'U' : e.role === 'agent' ? 'A' : 'T';
       const mark = e.role === 'user' ? '▸' : e.role === 'agent' ? '●' : '·';
       const blocks = parseBlocks(e.text);
@@ -609,7 +647,7 @@ function start(opts) {
       ? list[parseInt(idOrNumber, 10) - 1]
       : list.find((s) => s.id === idOrNumber);
     if (!picked) return notify('sesi tidak ditemukan');
-    if (messages && messages.length > 1) store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '', chatgptChatUrl: chatgptWeb.getChatUrl() || '', claudeChatUrl: claudeWeb.getChatUrl() || '', deepseekChatUrl: deepseekWeb.getChatUrl() || '' });
+    if (messages && messages.length > 1) store.save(store.activeId(), messages, sessionMeta());
     store.setActive(picked.id);
     const data = store.load(picked.id);
     messages = data && data.messages && data.messages.length > 1 ? data.messages : null;
@@ -651,7 +689,7 @@ function start(opts) {
         notify(historyInfo());
         break;
       case 'new': {
-        if (messages && messages.length > 1) store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '', chatgptChatUrl: chatgptWeb.getChatUrl() || '', claudeChatUrl: claudeWeb.getChatUrl() || '', deepseekChatUrl: deepseekWeb.getChatUrl() || '' });
+        if (messages && messages.length > 1) store.save(store.activeId(), messages, sessionMeta());
         const id = store.create();
         messages = null;
         pending.length = 0;
@@ -750,6 +788,10 @@ function start(opts) {
             : `penalaran Hydrogen: ${level}${cfg.geminiModel === 'hydrogen' ? '' : ' (aktif setelah /model hydrogen)'}`);
         }
         break;
+      case 'tools':
+        if (!arg || !['compact','detail','hide'].includes(arg)) notify(`tool view = ${toolView} (pakai /tools compact|detail|hide)`);
+        else { toolView = arg; renderLog(); notify(`tool view = ${toolView}`); }
+        break;
       default:
         notify('perintah tidak dikenal: /' + cmd);
     }
@@ -790,7 +832,7 @@ function start(opts) {
       append('error', 'ERROR: ' + (e && e.message ? e.message : String(e)));
     } finally {
       setBusy(false);
-      store.save(store.activeId(), messages, { geminiChatUrl: geminiWeb.getChatUrl() || '', chatgptChatUrl: chatgptWeb.getChatUrl() || '', claudeChatUrl: claudeWeb.getChatUrl() || '', deepseekChatUrl: deepseekWeb.getChatUrl() || '' });
+      store.save(store.activeId(), messages, sessionMeta());
       focusInput();
       drawStatus(pending.length ? `antrian ${pending.length}` : '');
       if (pending.length) setImmediate(() => handle(pending.shift()));
@@ -853,15 +895,13 @@ function start(opts) {
       else if (key.name === 'escape') closePicker();
       else if (key.ctrl && key.name === 'd') {
         const now = Date.now();
-        if (now - pickerDelAt < 1200) {
-          pickerDelAt = 0;
-          deletePickerSession();
-        } else {
-          pickerDelAt = now;
-          notify('Tekan Ctrl+D sekali lagi untuk menghapus sesi ini', 1500);
-        }
-      }
-      else return;
+        if (now - pickerDelAt < 1200) { pickerDelAt = 0; deletePickerSession(); }
+        else { pickerDelAt = now; notify('Tekan Ctrl+D sekali lagi untuk menghapus sesi ini', 1500); }
+      } else if (key.name === 'backspace') {
+        pickerFilter = pickerFilter.slice(0, -1); renderPicker();
+      } else if (ch && !key.ctrl && !key.meta && ch.length === 1 && ch >= ' ') {
+        pickerFilter += ch; renderPicker();
+      } else return;
       key.name = '';
       screen.render();
       return;
