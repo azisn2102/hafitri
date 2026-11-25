@@ -88,27 +88,70 @@ function visibleLen(s) {
     .replace(/\{\/?[^{}]+\}/g, '')).length;
 }
 
+function splitVisible(text, width) {
+  const w = Math.max(4, width);
+  const src = String(text == null ? '' : text);
+  const chunks = [];
+  let cur = '', vis = 0;
+  const bStack = [];
+  let ansi = '';
+  const flush = () => {
+    let out = cur;
+    for (let i = bStack.length - 1; i >= 0; i--) out += `{/${bStack[i]}}`;
+    if (ansi) out += '\x1b[39m';
+    chunks.push(out);
+    cur = ansi || '';
+    for (const t of bStack) cur += `{${t}}`;
+    vis = 0;
+  };
+  for (let i = 0; i < src.length; ) {
+    const esc = src.slice(i).match(/^\x1b\[[0-9;]*m/);
+    if (esc) { cur += esc[0]; ansi = esc[0] === '\x1b[39m' ? '' : esc[0]; i += esc[0].length; continue; }
+    const tag = src.slice(i).match(/^\{(\/)?([^{}]+)\}/);
+    if (tag) {
+      const full = tag[0], close = !!tag[1], name = tag[2];
+      if (name === 'open' || name === 'close') {
+        cur += full; vis += 1; i += full.length;
+        if (vis >= w) flush();
+        continue;
+      }
+      cur += full; i += full.length;
+      if (close) { const idx = bStack.lastIndexOf(name); if (idx >= 0) bStack.splice(idx, 1); }
+      else bStack.push(name);
+      continue;
+    }
+    cur += src[i]; i += 1; vis += 1;
+    if (vis >= w) flush();
+  }
+  if (cur) chunks.push(cur);
+  return chunks.length ? chunks : [''];
+}
+
 function clipAnsi(line, max) {
   const limit = Math.max(4, max);
   if (visibleLen(line) <= limit) return line;
   let out = '';
   let vis = 0;
   const src = String(line == null ? '' : line);
+  const bStack = [];
+  let ansi = '';
   for (let i = 0; i < src.length && vis < limit - 1; ) {
     const esc = src.slice(i).match(/^\x1b\[[0-9;]*m/);
-    if (esc) { out += esc[0]; i += esc[0].length; continue; }
-    const tag = src.slice(i).match(/^\{(?:open|close|\/?[^{}]+)\}/);
+    if (esc) { out += esc[0]; ansi = esc[0] === '\x1b[39m' ? '' : esc[0]; i += esc[0].length; continue; }
+    const tag = src.slice(i).match(/^\{(\/)?([^{}]+)\}/);
     if (tag) {
-      out += tag[0];
-      if (tag[0] === '{open}' || tag[0] === '{close}') vis += 1;
-      i += tag[0].length;
+      const full = tag[0], close = !!tag[1], name = tag[2];
+      if (name === 'open' || name === 'close') { out += full; vis += 1; i += full.length; continue; }
+      out += full; i += full.length;
+      if (close) { const idx = bStack.lastIndexOf(name); if (idx >= 0) bStack.splice(idx, 1); }
+      else bStack.push(name);
       continue;
     }
-    out += src[i];
-    i += 1;
-    vis += 1;
+    out += src[i]; i += 1; vis += 1;
   }
-  return out + '\x1b[39m…';
+  for (let i = bStack.length - 1; i >= 0; i--) out += `{/${bStack[i]}}`;
+  if (ansi) out += '\x1b[39m';
+  return out + '…';
 }
 
 /** Wrap sendiri (break_long_words=false) supaya blessed tidak memotong paksa. */
@@ -122,9 +165,9 @@ function wrapText(text, width) {
       let word = original;
       while (visibleLen(word) > w) {
         if (line) { out.push(line); line = ''; }
-        // hard cut plain word
-        out.push(word.slice(0, w));
-        word = word.slice(w);
+        const parts = splitVisible(word, w);
+        out.push(...parts.slice(0, -1));
+        word = parts[parts.length - 1] || '';
       }
       if (!word) continue;
       const candidate = line ? line + ' ' + word : word;
