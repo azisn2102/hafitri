@@ -76,16 +76,28 @@ async function ensurePage() {
           chatUrl = null;
         }
       }
+      // Pastikan composer benar-benar siap setelah restore chat lama.
+      let ready = false;
+      for (let i = 0; i < 30; i++) {
+        const info = await findComposer().catch(() => null);
+        if (info && info.ok) { ready = true; break; }
+        await sleep(500);
+      }
+      if (!ready) {
+        progress('composer chat lama tidak siap — mulai chat baru');
+        chatUrl = null;
+        sentCount = 0;
+      }
     }
     if (!chatUrl) {
       // Navigasi ke root benar-benar mengosongkan composer & mode Create image.
       progress('chat baru...');
       await conn.send('Page.enable');
       await conn.send('Page.navigate', { url: cfg.chatgptUrl });
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 30; i++) {
         await sleep(500);
-        const ready = await evaluate(`!!document.querySelector('[role="textbox"][aria-label="Ask ChatGPT"]')`).catch(() => false);
-        if (ready) break;
+        const info = await findComposer().catch(() => null);
+        if (info && info.ok) break;
       }
       await sleep(600);
     }
