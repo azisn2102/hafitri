@@ -46,6 +46,14 @@ function tidy(text) {
     .trim();
 }
 
+function tidyCode(text) {
+  return String(text == null ? '' : text)
+    .replace(/\r\n/g, '\n')
+    .replace(/\t/g, '  ')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\s+$/, '');
+}
+
 function parseBlocks(text) {
   const src = String(text == null ? '' : text).replace(/\r\n/g, '\n');
   const re = /```([a-z0-9+_-]*)\n?([\s\S]*?)```/gi;
@@ -53,7 +61,7 @@ function parseBlocks(text) {
   let last = 0, m;
   while ((m = re.exec(src))) {
     if (m.index > last) blocks.push({ type: 'text', content: src.slice(last, m.index) });
-    blocks.push({ type: 'code', lang: (m[1] || '').trim(), content: m[2].replace(/\n$/, '') });
+    blocks.push({ type: 'code', lang: (m[1] || '').trim(), content: tidyCode(m[2]) });
     last = re.lastIndex;
   }
   if (last < src.length) blocks.push({ type: 'text', content: src.slice(last) });
