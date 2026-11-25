@@ -169,7 +169,7 @@ function start(opts) {
   }
   function fuzzyScore(q, text) {
     const query = String(q || '').toLowerCase().trim();
-    const hay = String(text || '').toLower();
+    const hay = String(text || '').toLowerCase();
     if (!query) return 1;
     if (hay.includes(query)) return 100 - Math.min(80, hay.indexOf(query));
     let qi = 0, score = 0, last = -2;
