@@ -37,11 +37,11 @@ const {
 
 const HELP = [
   '/help              bantuan ini',
-  '/new               sesi baru (sesi lama tetap tersimpan)',
-  '/sessions          pilih/filter sesi (↑↓ Enter, ketik filter, Ctrl+D×2 hapus)',
+  '/new               sesi baru (Ctrl+N)',
+  '/sessions          pilih/filter sesi (Ctrl+O, ketik filter, Ctrl+D×2 hapus)',
   '/load <n|id>       muat sesi langsung',
   '/reset             kosongkan sesi aktif',
-  '/clear             bersihkan tampilan (riwayat tetap tersimpan)',
+  '/clear             bersihkan tampilan (Ctrl+L, riwayat tetap)',
   '/history           info riwayat tersimpan',
   '/provider          pilih provider',
   '/model <nama>      auto|flash|hydrogen|pro (Gemini) atau nama model API',
