@@ -80,12 +80,39 @@ function stripAnsi(s) {
   return String(s == null ? '' : s).replace(/\x1b\[[0-9;]*m/g, '');
 }
 
+function charWidth(cp) {
+  if (cp <= 0x1f || (cp >= 0x7f && cp <= 0x9f)) return 0;
+  if (cp >= 0x300 && cp <= 0x36f) return 0; // combining
+  if (cp >= 0x200b && cp <= 0x200f) return 0;
+  if (cp >= 0xfe00 && cp <= 0xfe0f) return 0; // variation selectors
+  if (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe10 && cp <= 0xfe19) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1faff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  ) return 2;
+  return 1;
+}
+
+function stringWidth(s) {
+  let w = 0;
+  for (const ch of String(s == null ? '' : s)) w += charWidth(ch.codePointAt(0));
+  return w;
+}
+
 function visibleLen(s) {
-  // Hitung lebar tampak: abaikan ANSI dan tag blessed sederhana.
-  return stripAnsi(String(s == null ? '' : s)
+  // Hitung lebar tampak terminal: abaikan ANSI dan tag blessed sederhana.
+  const plain = stripAnsi(String(s == null ? '' : s)
     .replace(/\{open\}/g, '{')
     .replace(/\{close\}/g, '}')
-    .replace(/\{\/?[^{}]+\}/g, '')).length;
+    .replace(/\{\/?[^{}]+\}/g, ''));
+  return stringWidth(plain);
 }
 
 function splitVisible(text, width) {
@@ -98,7 +125,7 @@ function splitVisible(text, width) {
   const flush = () => {
     let out = cur;
     for (let i = bStack.length - 1; i >= 0; i--) out += `{/${bStack[i]}}`;
-    if (ansi) out += '\x1b[39m';
+    if (ansi) out += '\x1b[0m';
     chunks.push(out);
     cur = ansi || '';
     for (const t of bStack) cur += `{${t}}`;
@@ -106,12 +133,14 @@ function splitVisible(text, width) {
   };
   for (let i = 0; i < src.length; ) {
     const esc = src.slice(i).match(/^\x1b\[[0-9;]*m/);
-    if (esc) { cur += esc[0]; ansi = esc[0] === '\x1b[39m' ? '' : esc[0]; i += esc[0].length; continue; }
+    if (esc) { cur += esc[0]; ansi = esc[0] === '\x1b[0m' || esc[0] === '\x1b[39m' ? '' : esc[0]; i += esc[0].length; continue; }
     const tag = src.slice(i).match(/^\{(\/)?([^{}]+)\}/);
     if (tag) {
       const full = tag[0], close = !!tag[1], name = tag[2];
       if (name === 'open' || name === 'close') {
-        cur += full; vis += 1; i += full.length;
+        const cw = stringWidth(name === 'open' ? '{' : '}');
+        if (vis + cw > w && cur) flush();
+        cur += full; vis += cw; i += full.length;
         if (vis >= w) flush();
         continue;
       }
@@ -120,7 +149,13 @@ function splitVisible(text, width) {
       else bStack.push(name);
       continue;
     }
-    cur += src[i]; i += 1; vis += 1;
+    const cp = src.codePointAt(i);
+    const ch = String.fromCodePoint(cp);
+    const cw = charWidth(cp);
+    if (vis + cw > w && cur) flush();
+    cur += ch;
+    i += ch.length;
+    vis += cw;
     if (vis >= w) flush();
   }
   if (cur) chunks.push(cur);
@@ -137,20 +172,28 @@ function clipAnsi(line, max) {
   let ansi = '';
   for (let i = 0; i < src.length && vis < limit - 1; ) {
     const esc = src.slice(i).match(/^\x1b\[[0-9;]*m/);
-    if (esc) { out += esc[0]; ansi = esc[0] === '\x1b[39m' ? '' : esc[0]; i += esc[0].length; continue; }
+    if (esc) { out += esc[0]; ansi = esc[0] === '\x1b[0m' || esc[0] === '\x1b[39m' ? '' : esc[0]; i += esc[0].length; continue; }
     const tag = src.slice(i).match(/^\{(\/)?([^{}]+)\}/);
     if (tag) {
       const full = tag[0], close = !!tag[1], name = tag[2];
-      if (name === 'open' || name === 'close') { out += full; vis += 1; i += full.length; continue; }
+      if (name === 'open' || name === 'close') {
+        const cw = stringWidth(name === 'open' ? '{' : '}');
+        if (vis + cw > limit - 1) break;
+        out += full; vis += cw; i += full.length; continue;
+      }
       out += full; i += full.length;
       if (close) { const idx = bStack.lastIndexOf(name); if (idx >= 0) bStack.splice(idx, 1); }
       else bStack.push(name);
       continue;
     }
-    out += src[i]; i += 1; vis += 1;
+    const cp = src.codePointAt(i);
+    const ch = String.fromCodePoint(cp);
+    const cw = charWidth(cp);
+    if (vis + cw > limit - 1) break;
+    out += ch; i += ch.length; vis += cw;
   }
   for (let i = bStack.length - 1; i >= 0; i--) out += `{/${bStack[i]}}`;
-  if (ansi) out += '\x1b[39m';
+  if (ansi) out += '\x1b[0m';
   return out + '…';
 }
 
@@ -241,20 +284,33 @@ function renderMarkdownLine(line, palette) {
   return out;
 }
 
-function highlightCode(line) {
+function highlightCode(line, lang) {
   const esc = (n) => `\x1b[38;5;${n}m`, R = '\x1b[39m';
   const kwC = esc(141), strC = esc(114), numC = esc(179), comC = esc(244), typC = esc(81);
+  const l = String(lang || '').toLowerCase();
   let s = String(line == null ? '' : line).replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'));
   const slots = [];
   const ph = (i) => `\x01${'x'.repeat(i + 1)}\x01`; // no digits, safe from number regex
   const slot = (v) => { const i = slots.push(v) - 1; return ph(i); };
-  // Strings first so comment/keyword regexes don't match inside them.
+
+  // Strings first.
   s = s.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)/g, (m) => slot(strC + m + R));
-  s = s.replace(/(\/\/.*$)/, (m) => slot(comC + m + R));
-  s = s.replace(/(^\s*#(?!include).*$)/, (m) => slot(comC + m + R));
+
+  // Comments: conservative by language.
+  if (['python','py','sh','bash','zsh','shell','rb','ruby','yaml','yml','toml','ini','conf'].includes(l)) {
+    s = s.replace(/(^\s*#.*$)/, (m) => slot(comC + m + R));
+  } else if (['sql'].includes(l)) {
+    s = s.replace(/(--.*$)/, (m) => slot(comC + m + R));
+  } else {
+    s = s.replace(/(\/\/.*$)/, (m) => slot(comC + m + R));
+    if (!['java','js','javascript','ts','typescript','c','cpp','go','rust','php','swift','kotlin','cs'].includes(l) && l) {
+      // unknown language: don't guess # comments
+    }
+  }
+
   s = s.replace(/\b(0x[\da-fA-F]+|\d+(?:\.\d+)?)\b/g, (m) => slot(numC + m + R));
-  s = s.replace(/\b(class|public|private|protected|static|void|int|double|float|long|short|byte|char|boolean|new|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|throws|import|package|extends|implements|interface|enum|const|let|var|val|function|async|await|export|from|def|print|self|None|True|False|fn|pub|mut|struct|impl|use|mod|go|func|type)\b/g, (m) => slot(kwC + m + R));
-  s = s.replace(/\b(String|List|ArrayList|Map|HashMap|Set|Scanner|System|Object|Integer|Double|Boolean|Promise|Array|Number|console)\b/g, (m) => slot(typC + m + R));
+  s = s.replace(/\b(class|public|private|protected|static|void|int|double|float|long|short|byte|char|boolean|new|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|throws|import|package|extends|implements|interface|enum|const|let|var|val|function|async|await|export|from|def|print|self|None|True|False|fn|pub|mut|struct|impl|use|mod|go|func|type|elif|pass|lambda|with|as|yield|match)\b/g, (m) => slot(kwC + m + R));
+  s = s.replace(/\b(String|List|ArrayList|Map|HashMap|Set|Scanner|System|Object|Integer|Double|Boolean|Promise|Array|Number|console|Dict|Tuple|Optional)\b/g, (m) => slot(typC + m + R));
   return s.replace(/\x01(x+)\x01/g, (_, xs) => slots[xs.length - 1] || '');
 }
 
@@ -270,7 +326,7 @@ function renderCodeBlock(block, width, palette) {
   const maxCode = Math.max(8, inner - 1);
   const lines = [top];
   for (const raw of String(block.content || '').split('\n')) {
-    const code = highlightCode(raw);
+    const code = highlightCode(raw, block.lang);
     lines.push(dim + '│ ' + reset + clipAnsi(code, maxCode));
   }
   lines.push(bot);
