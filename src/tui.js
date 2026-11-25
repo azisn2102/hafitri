@@ -48,6 +48,7 @@ const HELP = [
   '/reasoning <level> rendah|menengah|tinggi|off (Gemini Hydrogen)',
   '/tools <mode>      compact|detail|hide tampilan tool call',
   '/theme [nama]      opencode | mimo',
+  '/config            tampilkan path dan isi cli.json/state',
   '/login ...         gemini/chatgpt/claude/deepseek/aistudio via noVNC',
   '/session ...       start|stop|status|url browser noVNC',
   '/yolo [on|off]     izinkan perintah berisiko',
@@ -393,6 +394,7 @@ function start(opts) {
     { label: 'Tool view: hide', cmd: '/tools hide' },
     { label: 'Login browser', cmd: '/login' },
     { label: 'Theme', cmd: '/theme ' },
+    { label: 'Config', cmd: '/config' },
     { label: 'Clear view', cmd: '/clear' },
     { label: 'Reset active session', cmd: '/reset' },
     { label: 'Help', cmd: '/help' },
@@ -837,6 +839,11 @@ function start(opts) {
         if (!arg || !['compact','detail','hide'].includes(arg)) notify(`tool view = ${toolView} (pakai /tools compact|detail|hide)`);
         else { toolView = arg; persistState(); renderLog(); notify(`tool view = ${toolView}`); }
         break;
+      case 'config': {
+        const cli = appState.loadCli();
+        notify(`CLI config: ${appState.CLI_CONFIG}\nstate: ${appState.FILE}\n\n${JSON.stringify(cli, null, 2) || '{}'}`);
+        break;
+      }
       default:
         notify('perintah tidak dikenal: /' + cmd);
     }
