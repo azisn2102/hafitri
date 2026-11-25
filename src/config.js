@@ -42,6 +42,8 @@ const cfg = {
   novncPort: parseInt(process.env.NOVNC_PORT || '6080', 10) || 6080,
   novncAddr: process.env.NOVNC_ADDR || '127.0.0.1',
   novncWeb: process.env.NOVNC_WEB || '/usr/share/novnc',
+  webPort: parseInt(process.env.WEB_PORT || '7744', 10) || 7744,
+  webHost: process.env.WEB_HOST || '127.0.0.1',
   startUrl: process.env.BROWSER_START_URL || 'https://accounts.google.com/',
   userDataDir: process.env.BROWSER_PROFILE || path.join(ROOT, '.profile'),
   runDir: path.join(ROOT, '.run'),

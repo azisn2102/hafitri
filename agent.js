@@ -41,13 +41,16 @@ Pemakaian:
   hafitri --aistudio-login        buka AI Studio di noVNC untuk login manual
   hafitri --api "tugas"           pakai API OpenAI-compatible (butuh AI_API_KEY)
   hafitri                         TUI full-screen (default di terminal)
+  hafitri --web                   web UI (default 127.0.0.1:7744, terpisah dari noVNC)
+  hafitri --web --web-port 8080   web UI di port custom
+  hafitri --web --web-host 0.0.0.0 web UI listen di semua interface (hati-hati)
   hafitri --new                   mulai sesi baru (hapus riwayat lama)
   hafitri --plain                 REPL plaintext saja
   hafitri --login                 start sesi noVNC & tampilkan URL login
   hafitri --session               REPL + langsung start sesi noVNC
   hafitri --steps 40 "..."        batasi langkah tool
 
-Opsi: --gemini, --chatgpt, --claude, --deepseek, --gemini-api, --aistudio, --chatgpt-login, --claude-login, --deepseek-login, --aistudio-login, --api, --new, --tui, --plain, --login, --yolo, --help
+Opsi: --gemini, --chatgpt, --claude, --deepseek, --gemini-api, --aistudio, --chatgpt-login, --claude-login, --deepseek-login, --aistudio-login, --api, --new, --tui, --plain, --web, --web-host, --web-port, --login, --yolo, --help
 REPL: /help /tools /reset /login /session start|stop|status|url /yolo /steps /model /quit`);
 }
 
@@ -211,7 +214,7 @@ async function repl(opts) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false, gemini: false, chatgpt: false, chatgptLogin: false, claude: false, claudeLogin: false, deepseek: false, deepseekLogin: false, geminiApi: false, aistudio: false, aistudioLogin: false, api: false, tui: false, plain: false, fresh: false };
+  const opts = { yolo: false, maxSteps: cfg.maxSteps, session: false, login: false, gemini: false, chatgpt: false, chatgptLogin: false, claude: false, claudeLogin: false, deepseek: false, deepseekLogin: false, geminiApi: false, aistudio: false, aistudioLogin: false, api: false, tui: false, plain: false, fresh: false, web: false, webHost: null, webPort: null };
   const parts = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -232,6 +235,9 @@ async function main() {
     else if (a === '--new') opts.fresh = true;
     else if (a === '--tui') opts.tui = true;
     else if (a === '--plain') opts.plain = true;
+    else if (a === '--web') opts.web = true;
+    else if (a === '--web-host') opts.webHost = argv[++i];
+    else if (a === '--web-port') opts.webPort = parseInt(argv[++i], 10);
     else if (a === '--steps') opts.maxSteps = parseInt(argv[++i], 10) || cfg.maxSteps;
     else if (a === '--help' || a === '-h') { usage(); return; }
     else parts.push(a);
@@ -266,6 +272,14 @@ async function main() {
     console.log(`sesi baru ${id} — sesi lama tetap tersimpan, lihat dengan /sessions.`);
   }
   if (opts.session) console.log('noVNC: ' + await sess.start());
+
+  if (opts.web) {
+    if (opts.webHost) cfg.webHost = opts.webHost;
+    if (opts.webPort) cfg.webPort = opts.webPort;
+    const web = require('./src/web');
+    web.start(opts);
+    return;
+  }
 
   const task = parts.join(' ').trim();
   if (task) {
