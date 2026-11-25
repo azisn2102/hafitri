@@ -550,8 +550,8 @@ function start(opts) {
     if (pending.length) leftParts.push(tag(palette, `{U}antrian ${pending.length}{/U}`));
     if (statusExtra) leftParts.push(tag(palette, `{U}${statusExtra}{/U}`));
     const left = ' ' + leftParts.join(tag(palette, `{M}  ·  {/M}`));
-    const hints = cols > 90 ? `tools:${toolView}  ctrl+p  /help  esc×2 keluar`
-      : cols > 72 ? 'ctrl+p  /help  esc×2 keluar'
+    const hints = cols > 100 ? `tools:${toolView}  ctrl+p  ctrl+o sesi  ctrl+n baru  esc×2`
+      : cols > 72 ? `tools:${toolView}  ctrl+p  ctrl+o  esc×2`
         : 'ctrl+p  esc×2';
     const right = tag(palette, `{M}${hints}{/M} `);
     const pad = Math.max(1, cols - visibleLen(left) - visibleLen(right));
@@ -925,6 +925,16 @@ function start(opts) {
       key.name = '';
       entries.length = 0;
       renderLog();
+      return;
+    }
+    if (key.ctrl && key.name === 'n') {
+      key.name = '';
+      handle('/new');
+      return;
+    }
+    if (key.ctrl && key.name === 'o') {
+      key.name = '';
+      showPicker();
       return;
     }
     if (key.name === 'tab') {
