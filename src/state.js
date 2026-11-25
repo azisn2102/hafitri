@@ -1,9 +1,11 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const cfg = require('./config');
 
 const FILE = path.join(cfg.root, '.run', 'state.json');
+const CLI_CONFIG = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'hafitri', 'cli.json');
 
 function load() {
   try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { return {}; }
@@ -20,4 +22,8 @@ function save(patch) {
   } catch { return null; }
 }
 
-module.exports = { FILE, load, save };
+function loadCli() {
+  try { return JSON.parse(fs.readFileSync(CLI_CONFIG, 'utf8')); } catch { return {}; }
+}
+
+module.exports = { FILE, CLI_CONFIG, load, save, loadCli };

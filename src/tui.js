@@ -232,10 +232,14 @@ function start(opts) {
     } else {
       picker.setItems(pickerRows.map((s, i) => {
         const active = s.id === store.activeId() ? '●' : ' ';
-        const prov = (s.provider || '-').replace(/-web$/, '').replace(/-api$/, ' api');
-        const title = String(s.title || '(kosong)').slice(0, 34);
-        const chat = s.chatUrl ? 'chat↗' : '     ';
-        return ` ${active} ${String(i + 1).padStart(2, ' ')}  ${title.padEnd(34)}  ${String(s.count).padStart(3, ' ')}m  ${fmtAge(s.updatedAt).padEnd(8)}  ${prov.padEnd(8)} ${chat}`;
+        const provRaw = s.provider || '-';
+        const prov = provRaw.replace(/-web$/, '').replace(/-api$/, ' api');
+        const title = String(s.title || '(kosong)').slice(0, 32);
+        const chat = s.chatUrl
+          ? (provRaw.startsWith('gemini') ? 'gem↗' : provRaw.startsWith('chatgpt') ? 'gpt↗' : provRaw.startsWith('claude') ? 'cld↗' : provRaw.startsWith('deepseek') ? 'ds↗' : 'chat↗')
+          : '    ';
+        const model = String(s.model || '').replace(/^models\//, '').slice(0, 14);
+        return ` ${active} ${String(i + 1).padStart(2, ' ')}  ${title.padEnd(32)}  ${String(s.count).padStart(3, ' ')}m  ${fmtAge(s.updatedAt).padEnd(8)}  ${prov.padEnd(8)} ${chat} ${model}`;
       }));
     }
     picker.select(0);
@@ -463,7 +467,10 @@ function start(opts) {
     renderLog();
   }
 
+  const cliCfg = appState.loadCli();
   const last = appState.load();
+  if (cliCfg.theme && THEMES[cliCfg.theme]) applyTheme(cliCfg.theme);
+  if (cliCfg.toolView && ['compact','detail','hide'].includes(cliCfg.toolView)) toolView = cliCfg.toolView;
   if (last.provider) cfg.provider = last.provider;
   if (last.model) cfg.model = last.model;
   if (last.geminiModel) cfg.geminiModel = last.geminiModel;
