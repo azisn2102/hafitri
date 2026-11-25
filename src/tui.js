@@ -142,6 +142,8 @@ function renderMarkdownLine(line, palette) {
   const toolClose = palette ? `{/${palette.tool}-fg}` : '{/cyan-fg}';
   const muted = palette ? `{${palette.muted}-fg}` : '{#888-fg}';
   const mutedClose = palette ? `{/${palette.muted}-fg}` : '{/#888-fg}';
+  const accent = palette ? `{${palette.accent}-fg}` : '{cyan-fg}';
+  const accentClose = palette ? `{/${palette.accent}-fg}` : '{/cyan-fg}';
   let out = String(line == null ? '' : line)
     .replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'))
     .replace(/\*\*([^*]+)\*\*/g, '{bold}$1{/bold}')
@@ -151,7 +153,11 @@ function renderMarkdownLine(line, palette) {
   else if (/^#\s+/.test(out)) out = '{bold}' + out.replace(/^#\s+/, '') + '{/bold}';
   if (/^\s*[-*]\s+/.test(out)) out = out.replace(/^(\s*)[-*]\s+/, '$1• ');
   if (/^>\s?/.test(out)) out = muted + '│ ' + out.replace(/^>\s?/, '') + mutedClose;
-  if (out.startsWith('│ ')) out = tool + out + toolClose;
+  out = out.replace(/https?:\/\/[^\s<>"'()]+/gi, (url) => {
+    const clean = url.replace(/[.,;:!?]+$/, '');
+    const tail = url.slice(clean.length);
+    return `{underline}${accent}${clean}${accentClose}{/underline}${tail}`;
+  });
   return out;
 }
 
@@ -162,9 +168,10 @@ function highlightCode(line) {
   const slots = [];
   const ph = (i) => `\x01${'x'.repeat(i + 1)}\x01`; // no digits, safe from number regex
   const slot = (v) => { const i = slots.push(v) - 1; return ph(i); };
-  s = s.replace(/(\/\/.*$)/, (m) => slot(comC + m + R));
-  s = s.replace(/(#(?!include).*$)/, (m) => slot(comC + m + R));
+  // Strings first so comment/keyword regexes don't match inside them.
   s = s.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)/g, (m) => slot(strC + m + R));
+  s = s.replace(/(\/\/.*$)/, (m) => slot(comC + m + R));
+  s = s.replace(/(^\s*#(?!include).*$)/, (m) => slot(comC + m + R));
   s = s.replace(/\b(0x[\da-fA-F]+|\d+(?:\.\d+)?)\b/g, (m) => slot(numC + m + R));
   s = s.replace(/\b(class|public|private|protected|static|void|int|double|float|long|short|byte|char|boolean|new|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|throws|import|package|extends|implements|interface|enum|const|let|var|val|function|async|await|export|from|def|print|self|None|True|False|fn|pub|mut|struct|impl|use|mod|go|func|type)\b/g, (m) => slot(kwC + m + R));
   s = s.replace(/\b(String|List|ArrayList|Map|HashMap|Set|Scanner|System|Object|Integer|Double|Boolean|Promise|Array|Number|console)\b/g, (m) => slot(typC + m + R));
@@ -655,7 +662,7 @@ function start(opts) {
         const prepared = prepare(b.content, 4);
         const lines = wrapText(prepared, Math.max(10, inner - 4));
         for (const line of lines) {
-          const rendered = linkify(renderMarkdownLine(line, palette), palette);
+          const rendered = renderMarkdownLine(line, palette);
           if (first) { out.push(tag(palette, `{${c}}{bold}${mark}{/bold}{/${c}} `) + rendered); first = false; }
           else out.push('  ' + rendered);
         }
