@@ -155,35 +155,41 @@ function renderMarkdownLine(line, palette) {
   return out;
 }
 
+function highlightCode(line) {
+  const esc = (n) => `\x1b[38;5;${n}m`, R = '\x1b[39m';
+  const kwC = esc(141), strC = esc(114), numC = esc(179), comC = esc(244), typC = esc(81);
+  let s = String(line == null ? '' : line).replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'));
+  const slots = [];
+  const ph = (i) => `\x01${'x'.repeat(i + 1)}\x01`; // no digits, safe from number regex
+  const slot = (v) => { const i = slots.push(v) - 1; return ph(i); };
+  s = s.replace(/(\/\/.*$)/, (m) => slot(comC + m + R));
+  s = s.replace(/(#(?!include).*$)/, (m) => slot(comC + m + R));
+  s = s.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)/g, (m) => slot(strC + m + R));
+  s = s.replace(/\b(0x[\da-fA-F]+|\d+(?:\.\d+)?)\b/g, (m) => slot(numC + m + R));
+  s = s.replace(/\b(class|public|private|protected|static|void|int|double|float|long|short|byte|char|boolean|new|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|throws|import|package|extends|implements|interface|enum|const|let|var|val|function|async|await|export|from|def|print|self|None|True|False|fn|pub|mut|struct|impl|use|mod|go|func|type)\b/g, (m) => slot(kwC + m + R));
+  s = s.replace(/\b(String|List|ArrayList|Map|HashMap|Set|Scanner|System|Object|Integer|Double|Boolean|Promise|Array|Number|console)\b/g, (m) => slot(typC + m + R));
+  return s.replace(/\x01(x+)\x01/g, (_, xs) => slots[xs.length - 1] || '');
+}
+
 function renderCodeBlock(block, width, palette) {
   const esc = (n) => `\x1b[38;5;${n}m`;
   const reset = '\x1b[39m';
   const dim = esc(palette.muted);
   const accent = esc(palette.tool);
   const lang = block.lang ? ` ${block.lang} ` : ' code ';
-  const inner = Math.max(10, width - 2);
-  const top = dim + '┌' + '─' + accent + lang + dim + '─'.repeat(Math.max(0, inner - lang.length - 2)) + '┐' + reset;
-  const bot = dim + '└' + '─'.repeat(Math.max(0, inner)) + '┘' + reset;
+  const inner = Math.max(12, width - 4);
+  const top = dim + '┌─' + accent + lang + dim + '─'.repeat(Math.max(0, inner - lang.length - 1)) + '┐' + reset;
+  const bot = dim + '└' + '─'.repeat(Math.max(0, inner + 1)) + '┘' + reset;
   const lines = [top];
   for (const raw of String(block.content || '').split('\n')) {
-    const safe = raw.replace(/([{}])/g, (c) => (c === '{' ? '{open}' : '{close}'));
-    const chunks = wrapText(safe, Math.max(8, inner - 2));
-    for (const ch of chunks) lines.push(dim + '│ ' + reset + ch);
+    const code = highlightCode(raw);
+    // hard slice by visible-ish length; ANSI makes exact slice hard, so keep line and pad simply
+    lines.push(dim + '│ ' + reset + code);
   }
   lines.push(bot);
   return lines;
 }
 
-function mdBody(text, width, palette) {
-  const blocks = parseBlocks(String(text == null ? '' : text));
-  const out = [];
-  for (const b of blocks) {
-    if (b.type === 'code') { out.push(...renderCodeBlock(b, width, palette)); continue; }
-    const prepared = prepare(b.content, 4);
-    for (const line of wrapText(prepared, Math.max(10, width - 2))) out.push('  ' + linkify(renderMarkdownLine(line, palette), palette));
-  }
-  return out;
-}
 
 const HELP = [
   '/help              bantuan ini (menu ini)',
@@ -626,8 +632,8 @@ function start(opts) {
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
       const prev = entries[i - 1];
-      const body = prepare(e.text, maxIndent);
       if (e.role === 'plain') {
+        const body = prepare(e.text, maxIndent);
         for (const line of wrapText(body, inner)) out.push(linkify(line, palette));
         if (entries[i + 1]) out.push('');
         continue;
@@ -638,7 +644,7 @@ function start(opts) {
 
       const c = e.role === 'user' ? 'U' : e.role === 'agent' ? 'A' : 'T';
       const mark = e.role === 'user' ? '▸' : e.role === 'agent' ? '●' : '·';
-      const blocks = parseBlocks(body);
+      const blocks = parseBlocks(e.text);
       let first = true;
       for (const b of blocks) {
         if (b.type === 'code') {
@@ -648,11 +654,11 @@ function start(opts) {
         }
         const prepared = prepare(b.content, 4);
         const lines = wrapText(prepared, Math.max(10, inner - 4));
-        lines.forEach((line) => {
+        for (const line of lines) {
           const rendered = linkify(renderMarkdownLine(line, palette), palette);
           if (first) { out.push(tag(palette, `{${c}}{bold}${mark}{/bold}{/${c}} `) + rendered); first = false; }
           else out.push('  ' + rendered);
-        });
+        }
       }
     }
 
