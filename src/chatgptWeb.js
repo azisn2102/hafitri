@@ -47,10 +47,13 @@ async function ensurePage() {
     }
     await sleep(2000);
   }
-  const state = await evaluate(`(() => ({
-    login: [...document.querySelectorAll('button,a')].some(e => /^(Log in|Masuk)$/i.test((e.innerText || '').trim())),
-    editor: !!document.querySelector('[role="textbox"][aria-label="Ask ChatGPT"]'),
-  }))()`);
+  const state = await evaluate(`(() => {
+    const sels = ['#prompt-textarea','[role="textbox"][aria-label="Ask ChatGPT"]','textarea[aria-label="Ask ChatGPT"]','[contenteditable="true"][data-testid="prompt-textarea"]','div.ProseMirror[contenteditable="true"]','[role="textbox"][contenteditable="true"]','textarea[name="prompt-textarea"]'];
+    return {
+      login: [...document.querySelectorAll('button,a')].some(e => /^(Log in|Masuk)$/i.test((e.innerText || '').trim())),
+      editor: sels.some(sel => !!document.querySelector(sel)),
+    };
+  })()`);
   if (state && state.login && !state.editor) {
     throw new Error('Belum login ChatGPT. Buka noVNC ' + sess.novncUrl() + ' lalu login, atau jalankan: hafitri --chatgpt-login');
   }
@@ -109,28 +112,76 @@ function buildPrompt(messages, fresh, tools) {
   return out.join('\n\n');
 }
 
+async function findComposer() {
+  return evaluate(`(() => {
+    const sels = [
+      '#prompt-textarea',
+      '[role="textbox"][aria-label="Ask ChatGPT"]',
+      'textarea[aria-label="Ask ChatGPT"]',
+      '[contenteditable="true"][data-testid="prompt-textarea"]',
+      'div.ProseMirror[contenteditable="true"]',
+      '[role="textbox"][contenteditable="true"]',
+      'textarea[name="prompt-textarea"]',
+    ];
+    for (const sel of sels) {
+      const el = document.querySelector(sel);
+      if (el) return { ok: true, sel, tag: el.tagName.toLowerCase() };
+    }
+    const login = [...document.querySelectorAll('button,a')].some(e => /^(Log in|Masuk)$/i.test((e.innerText||'').trim()));
+    return { ok: false, login, url: location.href };
+  })()`);
+}
+
 async function sendPrompt(text) {
+  let info = await findComposer();
+  if (!info || !info.ok) {
+    // retry once after short wait; UI can be transitioning
+    await sleep(1500);
+    info = await findComposer();
+  }
+  if (!info || !info.ok) {
+    if (info && info.login) throw new Error('Belum login ChatGPT. Buka noVNC + /login chatgpt lalu login manual.');
+    throw new Error('Kolom input ChatGPT tidak ditemukan. Buka noVNC + /login chatgpt lalu login manual.');
+  }
   const ok = await evaluate(`(() => {
-    const el = document.querySelector('[role="textbox"][aria-label="Ask ChatGPT"]');
+    const sels = ${JSON.stringify([
+      '#prompt-textarea',
+      '[role="textbox"][aria-label="Ask ChatGPT"]',
+      'textarea[aria-label="Ask ChatGPT"]',
+      '[contenteditable="true"][data-testid="prompt-textarea"]',
+      'div.ProseMirror[contenteditable="true"]',
+      '[role="textbox"][contenteditable="true"]',
+      'textarea[name="prompt-textarea"]',
+    ])};
+    let el = null;
+    for (const sel of sels) { el = document.querySelector(sel); if (el) break; }
     if (!el) return false;
     el.focus();
+    if (el.tagName.toLowerCase() === 'textarea') {
+      el.value = '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return 'textarea';
+    }
     const r = document.createRange();
     r.selectNodeContents(el);
     r.collapse(false);
     const s = window.getSelection();
     s.removeAllRanges();
     s.addRange(r);
-    return true;
+    return 'contenteditable';
   })()`);
   if (!ok) throw new Error('Kolom input ChatGPT tidak ditemukan. Buka noVNC + /login chatgpt lalu login manual.');
   await conn.send('Input.insertText', { text });
   await sleep(600);
   const sent = await evaluate(`(() => {
     const b = document.querySelector('button[data-testid="send-button"]')
+      || document.querySelector('button[aria-label*="Send prompt"]')
       || [...document.querySelectorAll('button')].find(e => /^(Send|Send message|Send prompt|Kirim)$/i.test((e.getAttribute('aria-label') || '').trim()));
-    if (!b || b.disabled) return false;
-    b.click();
-    return true;
+    if (b && !b.disabled) { b.click(); return true; }
+    // fallback: Enter
+    const el = document.querySelector('#prompt-textarea,[role="textbox"][contenteditable="true"],textarea[name="prompt-textarea"]');
+    if (el) { el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true})); return 'enter'; }
+    return false;
   })()`);
   if (!sent) throw new Error('Tombol kirim ChatGPT tidak ditemukan / masih disabled');
 }
