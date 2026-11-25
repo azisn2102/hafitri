@@ -373,9 +373,19 @@ function start(opts) {
     { label: 'Help', cmd: '/help' },
     { label: 'Quit', cmd: '/quit' },
   ];
-  function showCommandPalette() {
-    commandPicker.setItems(PALETTE_COMMANDS.map((c) => ` ${c.label.padEnd(24)} ${c.cmd}`));
+  let paletteFilter = '';
+  let paletteRows = [];
+  function renderCommandPalette() {
+    const q = paletteFilter.toLowerCase().trim();
+    paletteRows = PALETTE_COMMANDS.filter((c) => !q || `${c.label} ${c.cmd}`.toLowerCase().includes(q));
+    commandPicker.setLabel(` COMMAND PALETTE ${q ? `filter: ${q} ` : ''}— ↑↓ Enter  ketik filter  ESC `);
+    commandPicker.setItems(paletteRows.length ? paletteRows.map((c) => ` ${c.label.padEnd(24)} ${c.cmd}`) : ['  (tidak ada command cocok)']);
     commandPicker.select(0);
+    screen.render();
+  }
+  function showCommandPalette() {
+    paletteFilter = '';
+    renderCommandPalette();
     commandPicker.show();
     commandPickerActive = true;
     commandPicker.focus();
@@ -389,7 +399,7 @@ function start(opts) {
     screen.render();
   }
   function chooseCommand() {
-    const picked = PALETTE_COMMANDS[commandPicker.selected];
+    const picked = paletteRows[commandPicker.selected];
     closeCommandPalette();
     if (!picked) return;
     if (picked.cmd.endsWith(' ')) {
@@ -432,6 +442,7 @@ function start(opts) {
   if (last.provider) cfg.provider = last.provider;
   if (last.model) cfg.model = last.model;
   if (last.geminiModel) cfg.geminiModel = last.geminiModel;
+  if (last.toolView && ['compact','detail','hide'].includes(last.toolView)) toolView = last.toolView;
   if (last.sessionId) store.setActive(last.sessionId);
   const active = store.load();
   if (active && active.messages && active.messages.length > 1) {
@@ -457,7 +468,7 @@ function start(opts) {
     };
   }
   function persistState() {
-    appState.save({ provider: cfg.provider, model: cfg.model, geminiModel: cfg.geminiModel, sessionId: store.activeId() || '' });
+    appState.save({ provider: cfg.provider, model: cfg.model, geminiModel: cfg.geminiModel, sessionId: store.activeId() || '', toolView });
   }
   function historyInfo() {
     const id = store.activeId();
@@ -539,7 +550,9 @@ function start(opts) {
     if (pending.length) leftParts.push(tag(palette, `{U}antrian ${pending.length}{/U}`));
     if (statusExtra) leftParts.push(tag(palette, `{U}${statusExtra}{/U}`));
     const left = ' ' + leftParts.join(tag(palette, `{M}  ·  {/M}`));
-    const hints = cols > 72 ? 'enter kirim  /help  /provider  esc×2 keluar' : '/help  esc×2 keluar';
+    const hints = cols > 90 ? `tools:${toolView}  ctrl+p  /help  esc×2 keluar`
+      : cols > 72 ? 'ctrl+p  /help  esc×2 keluar'
+        : 'ctrl+p  esc×2';
     const right = tag(palette, `{M}${hints}{/M} `);
     const pad = Math.max(1, cols - visibleLen(left) - visibleLen(right));
     status.setContent(left + ' '.repeat(pad) + right);
@@ -790,7 +803,7 @@ function start(opts) {
         break;
       case 'tools':
         if (!arg || !['compact','detail','hide'].includes(arg)) notify(`tool view = ${toolView} (pakai /tools compact|detail|hide)`);
-        else { toolView = arg; renderLog(); notify(`tool view = ${toolView}`); }
+        else { toolView = arg; persistState(); renderLog(); notify(`tool view = ${toolView}`); }
         break;
       default:
         notify('perintah tidak dikenal: /' + cmd);
@@ -863,6 +876,8 @@ function start(opts) {
       else if (key.name === 'down') commandPicker.down();
       else if (key.name === 'enter') chooseCommand();
       else if (key.name === 'escape' || (key.ctrl && key.name === 'p')) closeCommandPalette();
+      else if (key.name === 'backspace') { paletteFilter = paletteFilter.slice(0, -1); renderCommandPalette(); }
+      else if (ch && !key.ctrl && !key.meta && ch.length === 1 && ch >= ' ') { paletteFilter += ch; renderCommandPalette(); }
       else return;
       key.name = '';
       screen.render();
