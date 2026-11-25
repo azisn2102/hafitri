@@ -76,6 +76,41 @@ function prepare(text, maxIndent) {
     .replace(/^#{1,6}\s+/gm, '');
 }
 
+function stripAnsi(s) {
+  return String(s == null ? '' : s).replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+function visibleLen(s) {
+  // Hitung lebar tampak: abaikan ANSI dan tag blessed sederhana.
+  return stripAnsi(String(s == null ? '' : s)
+    .replace(/\{open\}/g, '{')
+    .replace(/\{close\}/g, '}')
+    .replace(/\{\/?[^{}]+\}/g, '')).length;
+}
+
+function clipAnsi(line, max) {
+  const limit = Math.max(4, max);
+  if (visibleLen(line) <= limit) return line;
+  let out = '';
+  let vis = 0;
+  const src = String(line == null ? '' : line);
+  for (let i = 0; i < src.length && vis < limit - 1; ) {
+    const esc = src.slice(i).match(/^\x1b\[[0-9;]*m/);
+    if (esc) { out += esc[0]; i += esc[0].length; continue; }
+    const tag = src.slice(i).match(/^\{(?:open|close|\/?[^{}]+)\}/);
+    if (tag) {
+      out += tag[0];
+      if (tag[0] === '{open}' || tag[0] === '{close}') vis += 1;
+      i += tag[0].length;
+      continue;
+    }
+    out += src[i];
+    i += 1;
+    vis += 1;
+  }
+  return out + '\x1b[39m…';
+}
+
 /** Wrap sendiri (break_long_words=false) supaya blessed tidak memotong paksa. */
 function wrapText(text, width) {
   const w = Math.max(8, width);
@@ -85,14 +120,16 @@ function wrapText(text, width) {
     let line = '';
     for (const original of para.split(/\s+/)) {
       let word = original;
-      while (word.length > w) {
+      while (visibleLen(word) > w) {
         if (line) { out.push(line); line = ''; }
+        // hard cut plain word
         out.push(word.slice(0, w));
         word = word.slice(w);
       }
       if (!word) continue;
+      const candidate = line ? line + ' ' + word : word;
       if (!line) line = word;
-      else if (line.length + 1 + word.length <= w) line += ' ' + word;
+      else if (visibleLen(candidate) <= w) line = candidate;
       else { out.push(line); line = word; }
     }
     out.push(line);
@@ -187,11 +224,11 @@ function renderCodeBlock(block, width, palette) {
   const inner = Math.max(12, width - 4);
   const top = dim + '┌─' + accent + lang + dim + '─'.repeat(Math.max(0, inner - lang.length - 1)) + '┐' + reset;
   const bot = dim + '└' + '─'.repeat(Math.max(0, inner + 1)) + '┘' + reset;
+  const maxCode = Math.max(8, inner - 1);
   const lines = [top];
   for (const raw of String(block.content || '').split('\n')) {
     const code = highlightCode(raw);
-    // hard slice by visible-ish length; ANSI makes exact slice hard, so keep line and pad simply
-    lines.push(dim + '│ ' + reset + code);
+    lines.push(dim + '│ ' + reset + clipAnsi(code, maxCode));
   }
   lines.push(bot);
   return lines;
@@ -244,7 +281,7 @@ function start(opts) {
   const log = blessed.box({
     top: 1, left: 0, width: '100%', height: '100%-5',
     label: ' PERCAKAPAN ', border: { type: 'round' },
-    tags: true, wrap: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
+    tags: true, wrap: false, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
     padding: { left: 1, right: 1 },
     scrollbar: {
       ch: ' ',
